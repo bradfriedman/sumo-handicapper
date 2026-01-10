@@ -21,6 +21,10 @@ dependencies = [
     # Utilities
     "tqdm==4.66.5",
     "joblib==1.4.2",
+
+    # Web UI
+    "streamlit>=1.28.0",
+    "plotly>=5.17.0",
 ]
 
 [build-system]
