@@ -13,6 +13,8 @@ Interactive web interface for predicting sumo wrestling bout outcomes.
 
 ## Running the App
 
+### Local Development
+
 From the project directory:
 
 ```bash
@@ -20,6 +22,16 @@ uv run streamlit run src/prediction/streamlit_app.py
 ```
 
 Opens automatically at http://localhost:8501
+
+### Deploying to Streamlit Cloud
+
+The project includes a `requirements.txt` file for Streamlit Cloud compatibility. When deploying:
+
+1. Push your code to GitHub
+2. Connect your repository to Streamlit Cloud
+3. Streamlit Cloud will automatically use `requirements.txt` for dependencies
+
+The `requirements.txt` file is auto-generated from `pyproject.toml` using `uv export` and includes all necessary dependencies with pinned versions.
 
 ## Usage
 

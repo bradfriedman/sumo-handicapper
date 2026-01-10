@@ -63,9 +63,9 @@ sumo-handicapper/
 │   └── utils/                        # Utilities and tests
 │
 ├── docs/                             # Documentation
-│   ├── PREDICTION_README.md
-│   ├── STREAMLIT_README.md
-│   └── STREAMLIT_QUICKSTART.md
+│   ├── SETUP.md
+│   ├── USAGE.md
+│   └── STREAMLIT.md
 │
 ├── data/                             # Sample data
 │   └── sample_bouts.csv
@@ -89,12 +89,14 @@ sumo-handicapper/
 This project uses modern Python packaging with `pyproject.toml` and `uv` for dependency management.
 
 ```bash
-# Install uv if you haven't already
+# Install uv
 pip install uv
 
 # Sync all dependencies
 uv sync
 ```
+
+**Note:** `requirements.txt` is maintained for Streamlit Cloud deployment but local development uses `uv`.
 
 ## Documentation
 

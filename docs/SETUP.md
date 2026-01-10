@@ -6,13 +6,12 @@ Complete setup instructions for running the sumo bout prediction system on macOS
 
 - Python 3.12+
 - Google Cloud SQL Proxy (for database access)
-- `uv` for dependency management (recommended) or `pip`
+- `uv` for dependency management
 
 ## 1. Installation
 
 ### Install Dependencies
 
-**Using uv (recommended):**
 ```bash
 # Install uv if needed
 pip install uv
@@ -21,10 +20,7 @@ pip install uv
 uv sync
 ```
 
-**Using pip:**
-```bash
-pip install -r requirements.txt
-```
+**Note:** The `requirements.txt` file is maintained for Streamlit Cloud deployment compatibility, but for local development always use `uv sync`.
 
 ## 2. Database Setup (Cloud SQL Proxy)
 
