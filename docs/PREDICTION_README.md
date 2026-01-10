@@ -6,8 +6,14 @@ This system uses a trained ensemble model (60.4% accuracy) to predict the outcom
 
 ### 1a. Interactive Mode with Names (EASIEST!)
 
+**macOS/Linux:**
 ```bash
 python3 predict_by_name.py --interactive
+```
+
+**Windows 11 (PowerShell):**
+```powershell
+.venv\Scripts\python.exe predict_by_name.py --interactive
 ```
 
 This will prompt you to enter rikishi **names** instead of IDs:
@@ -18,8 +24,14 @@ This will prompt you to enter rikishi **names** instead of IDs:
 
 ### 1b. Interactive Mode with IDs
 
+**macOS/Linux:**
 ```bash
 python3 predict_bouts.py --interactive
+```
+
+**Windows 11 (PowerShell):**
+```powershell
+.venv\Scripts\python.exe predict_bouts.py --interactive
 ```
 
 This will prompt you to enter bout details using rikishi IDs:
@@ -41,29 +53,54 @@ rikishi_a_id,rikishi_b_id,basho_id,day,rikishi_a_rank,rikishi_b_rank
 
 Then run:
 
+**macOS/Linux:**
 ```bash
 python3 predict_bouts.py --csv your_bouts.csv
+```
+
+**Windows 11 (PowerShell):**
+```powershell
+.venv\Scripts\python.exe predict_bouts.py --csv your_bouts.csv
 ```
 
 Results will be saved to `your_bouts_predictions.csv`
 
 ### 3a. Single Prediction by Name (RECOMMENDED)
 
+**macOS/Linux:**
 ```bash
 python3 predict_by_name.py --name1 "Abdelrahman Sharan" --name2 "Adiya Baasandorj" --basho 600 --day 10
 ```
 
+**Windows 11 (PowerShell):**
+```powershell
+.venv\Scripts\python.exe predict_by_name.py --name1 "Abdelrahman Sharan" --name2 "Adiya Baasandorj" --basho 600 --day 10
+```
+
 You can use partial names - if multiple matches are found, you'll be prompted to select:
 
+**macOS/Linux:**
 ```bash
 python3 predict_by_name.py --name1 "Akira" --name2 "Altan" --basho 600 --day 10
 # Will show you all wrestlers with "Akira" in their name
 ```
 
+**Windows 11 (PowerShell):**
+```powershell
+.venv\Scripts\python.exe predict_by_name.py --name1 "Akira" --name2 "Altan" --basho 600 --day 10
+# Will show you all wrestlers with "Akira" in their name
+```
+
 ### 3b. Single Prediction by ID
 
+**macOS/Linux:**
 ```bash
 python3 predict_bouts.py --rikishi1 123 --rikishi2 456 --basho 630 --day 10
+```
+
+**Windows 11 (PowerShell):**
+```powershell
+.venv\Scripts\python.exe predict_bouts.py --rikishi1 123 --rikishi2 456 --basho 630 --day 10
 ```
 
 ## CSV Format
@@ -133,8 +170,14 @@ The fantasy points are calculated as follows:
 
 To re-train with updated data from the database:
 
+**macOS/Linux:**
 ```bash
-python3 save_best_model.py
+python3 -m src.training.save_best_model
+```
+
+**Windows 11 (PowerShell):**
+```powershell
+.venv\Scripts\python.exe -m src.training.save_best_model
 ```
 
 This will create a new `sumo_predictor_production.joblib` file with the latest data.

@@ -21,8 +21,18 @@ All installed and verified:
 
 From your project directory:
 
+**macOS/Linux:**
 ```bash
 streamlit run streamlit_app.py
+# Or with full path
+.venv/bin/streamlit run src/prediction/streamlit_app.py
+```
+
+**Windows 11 (PowerShell):**
+```powershell
+streamlit run streamlit_app.py
+# Or with full path
+.venv\Scripts\streamlit.exe run src\prediction\streamlit_app.py
 ```
 
 The app will automatically open in your browser at `http://localhost:8501`
@@ -67,11 +77,19 @@ You may see a warning about `pyarrow` when starting the app. This is **completel
 The app works perfectly without it.
 
 If you want to install it (optional):
+
+**macOS:**
 ```bash
 # Install Apache Arrow C++ libraries first
-brew install apache-arrow  # macOS
+brew install apache-arrow
 
 # Then install pyarrow
+pip install 'pyarrow>=7.0,<22'
+```
+
+**Windows 11:**
+```powershell
+# Install pyarrow directly (pre-built wheels available)
 pip install 'pyarrow>=7.0,<22'
 ```
 
@@ -99,7 +117,9 @@ This means the same prediction code powers both the CLI scripts and web UI!
 ## Support
 
 If you encounter issues:
-1. Verify model exists: `ls sumo_predictor_production.joblib`
+1. Verify model exists:
+   - macOS/Linux: `ls sumo_predictor_production.joblib`
+   - Windows: `dir sumo_predictor_production.joblib` or `ls sumo_predictor_production.joblib` (in PowerShell)
 2. Check database connection (should auto-connect)
 3. Restart Streamlit if needed: Ctrl+C, then rerun
 

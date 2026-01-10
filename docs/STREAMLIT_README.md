@@ -17,8 +17,16 @@ A beautiful, reactive web interface for predicting sumo wrestling bout outcomes 
 
 Install the required packages using pip:
 
+**macOS/Linux:**
 ```bash
 pip3 install streamlit plotly
+```
+
+**Windows 11 (PowerShell):**
+```powershell
+pip install streamlit plotly
+# Or using the venv python
+.venv\Scripts\python.exe -m pip install streamlit plotly
 ```
 
 ### Additional Dependencies
@@ -37,13 +45,21 @@ The following packages should already be installed if you've set up the predicti
 
 Streamlit has a dependency on `pyarrow` which may fail to build on some systems (especially Python 3.14). You have two options:
 
-**Option 1:** Install cmake (required to build pyarrow)
+**Option 1:** Install cmake (required to build pyarrow on some systems)
+
+*macOS:*
 ```bash
 # On macOS with Homebrew
 brew install cmake
 
 # Then install pyarrow
 pip3 install 'pyarrow<22,>=7.0'
+```
+
+*Windows 11:*
+```powershell
+# PyArrow has pre-built wheels for Windows, so cmake is not needed
+pip install 'pyarrow<22,>=7.0'
 ```
 
 **Option 2:** Run without pyarrow (basic functionality will still work)
@@ -53,8 +69,18 @@ The app will run fine without pyarrow for most use cases. You may see a warning 
 
 From the project directory, run:
 
+**macOS/Linux:**
 ```bash
 streamlit run streamlit_app.py
+# Or with full path
+.venv/bin/streamlit run src/prediction/streamlit_app.py
+```
+
+**Windows 11 (PowerShell):**
+```powershell
+streamlit run streamlit_app.py
+# Or with full path
+.venv\Scripts\streamlit.exe run src\prediction\streamlit_app.py
 ```
 
 The app will open in your default browser at `http://localhost:8501`
