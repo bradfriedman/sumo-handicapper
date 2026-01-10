@@ -4,56 +4,29 @@ Machine learning system for predicting Japanese sumo wrestling bout outcomes wit
 
 ## Quick Start
 
+All commands use `uv run` which works cross-platform on both Windows and macOS.
+
 ### Making Predictions
 
-**macOS/Linux:**
 ```bash
 # Interactive prediction by wrestler name (easiest!)
-python3 predict_by_name.py --interactive
-
-# Interactive prediction by ID
-python3 predict_bouts.py --interactive
+uv run python predict_by_name.py --interactive
 
 # Web UI (beautiful, interactive)
-.venv/bin/streamlit run src/prediction/streamlit_app.py
+uv run streamlit run src/prediction/streamlit_app.py
 
 # Single prediction
-python3 predict_by_name.py --name1 "Hakuho" --name2 "Asashoryu" --basho 630 --day 10
+uv run python predict_by_name.py --name1 "Hakuho" --name2 "Asashoryu" --basho 630 --day 10
 
 # Batch predictions from CSV
-python3 predict_bouts.py --csv data/sample_bouts.csv
-```
-
-**Windows 11 (PowerShell):**
-```powershell
-# Interactive prediction by wrestler name (easiest!)
-.venv\Scripts\python.exe predict_by_name.py --interactive
-
-# Interactive prediction by ID
-.venv\Scripts\python.exe predict_bouts.py --interactive
-
-# Web UI (beautiful, interactive)
-.venv\Scripts\streamlit.exe run src/prediction/streamlit_app.py
-
-# Single prediction
-.venv\Scripts\python.exe predict_by_name.py --name1 "Hakuho" --name2 "Asashoryu" --basho 630 --day 10
-
-# Batch predictions from CSV
-.venv\Scripts\python.exe predict_bouts.py --csv data/sample_bouts.csv
+uv run python predict_bouts.py --csv data/sample_bouts.csv
 ```
 
 ### Training Models
 
-**macOS/Linux:**
 ```bash
 # Train and save production model
-python3 -m src.training.save_best_model
-```
-
-**Windows 11 (PowerShell):**
-```powershell
-# Train and save production model
-.venv\Scripts\python.exe -m src.training.save_best_model
+uv run python -m src.training.save_best_model
 ```
 
 ## Project Structure
@@ -115,30 +88,19 @@ sumo-handicapper/
 
 This project uses modern Python packaging with `pyproject.toml` and `uv` for dependency management.
 
-**Option 1: Using uv (recommended):**
 ```bash
 # Install uv if you haven't already
 pip install uv
 
-# Sync dependencies
+# Sync all dependencies
 uv sync
-```
-
-**Option 2: Using pip:**
-```bash
-pip install -r requirements.txt
-
-# For Streamlit UI (optional)
-pip install streamlit plotly
 ```
 
 ## Documentation
 
-- **[Quick Start Guide](QUICK_START.md)** - Get up and running quickly
-- **[Prediction Guide](docs/PREDICTION_README.md)** - How to make predictions
-- **[Streamlit UI Guide](docs/STREAMLIT_README.md)** - Web interface docs
-- **[Streamlit Quick Start](docs/STREAMLIT_QUICKSTART.md)** - Get started with the web UI
-- **[Project Setup](PROJECT_SETUP_COMPLETE.md)** - Complete setup details
+- **[Setup Guide](docs/SETUP.md)** - Installation and database configuration
+- **[Usage Guide](docs/USAGE.md)** - How to make predictions (CLI)
+- **[Streamlit UI Guide](docs/STREAMLIT.md)** - Web interface documentation
 
 ## Model Details
 
