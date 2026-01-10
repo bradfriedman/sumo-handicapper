@@ -16,7 +16,7 @@ venv.bak/
 # IDE
 .idea/
 .vscode/
-.claude/
+.claude/settings.local.json
 *.swp
 *.swo
 *~
