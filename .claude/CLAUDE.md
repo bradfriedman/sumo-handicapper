@@ -53,3 +53,13 @@ To set up the MCP server on a new machine:
 3. **Restart Claude Desktop** to load the MCP server
 
 4. **Ensure Cloud SQL Proxy is running** to connect to the database
+
+## Running the Application
+
+To run the Streamlit prediction app (works on both Windows and Mac):
+
+```bash
+uv run streamlit run src/prediction/streamlit_app.py
+```
+
+This command works cross-platform because `uv` handles the virtual environment activation automatically.
