@@ -28,6 +28,7 @@ venv.bak/
 
 # Project-specific: Models and data
 models/**/*.joblib
+!models/sumo_predictor_production.joblib
 models/**/*.pkl
 models/**/*.h5
 models/**/*.pt
