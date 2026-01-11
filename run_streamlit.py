@@ -3,6 +3,7 @@
 Launcher for Streamlit UI
 Run with: streamlit run run_streamlit.py
 """
-from src.prediction import streamlit_app
+from src.prediction.streamlit_app import main
 
-# Streamlit will automatically run this module
+# Execute the main app function
+main()
