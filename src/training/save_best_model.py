@@ -5,6 +5,7 @@ import os
 import sys
 from src.training.enhanced_features import EnhancedFeatureEngineer
 from src.core.sumo_predictor import ModelConfig, SumoDataLoader
+from src.utils.gpu_optimizer import GPUOptimizer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.metrics import accuracy_score
@@ -14,7 +15,7 @@ import joblib
 from datetime import datetime
 import numpy as np
 
-def train_and_save_production_model(start_basho=None, end_basho=None, latest_basho=None, latest_day=None, verbose=True):
+def train_and_save_production_model(start_basho=None, end_basho=None, latest_basho=None, latest_day=None, verbose=True, use_gpu=False):
     """
     Train and save the production model.
 
@@ -24,6 +25,7 @@ def train_and_save_production_model(start_basho=None, end_basho=None, latest_bas
         latest_basho: Latest basho ID in database (for metadata)
         latest_day: Latest day in database (for metadata)
         verbose: Print progress messages
+        use_gpu: Enable GPU acceleration (default False - CPU is faster for this dataset)
 
     Returns:
         dict with training results or None on error
@@ -32,6 +34,20 @@ def train_and_save_production_model(start_basho=None, end_basho=None, latest_bas
         print("="*80)
         print("TRAINING AND SAVING BEST MODEL FOR PREDICTIONS")
         print("="*80)
+
+    # GPU optimization (disabled by default - CPU is faster for this dataset size)
+    # Benchmark showed CPU is 3.1x faster for ~82K samples
+    # See GPU_BENCHMARK_RESULTS.md for details
+    if use_gpu:
+        if verbose:
+            print("\nDetecting GPU hardware and optimizations...")
+        gpu_optimizer = GPUOptimizer()
+        if verbose:
+            gpu_optimizer.print_summary()
+    else:
+        gpu_optimizer = None
+        if verbose:
+            print("\nUsing CPU training (faster for this dataset size)")
 
     # Load historical data
     if verbose:
@@ -70,6 +86,13 @@ def train_and_save_production_model(start_basho=None, end_basho=None, latest_bas
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     ensemble_weights = {'rf': 0.45, 'lgb': 0.45, 'xgb': 0.10}
 
+    # Get optimized parameters
+    if use_gpu and gpu_optimizer:
+        recommendations = gpu_optimizer.get_training_recommendations()
+        n_estimators = recommendations.get('recommended_n_estimators', 400)
+    else:
+        n_estimators = 400  # CPU-optimized default
+
     # Create models for CV
     rf_model_cv = RandomForestClassifier(
         n_estimators=200,
@@ -80,29 +103,39 @@ def train_and_save_production_model(start_basho=None, end_basho=None, latest_bas
         n_jobs=-1
     )
 
-    lgb_model_cv = lgb.LGBMClassifier(
-        max_depth=6,
-        learning_rate=0.03,
-        n_estimators=400,
-        num_leaves=31,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        n_jobs=-1,
-        verbose=-1
-    )
+    # LightGBM configuration
+    lgb_base_params = {
+        'max_depth': 6,
+        'learning_rate': 0.03,
+        'n_estimators': n_estimators,
+        'num_leaves': 31,
+        'subsample': 0.8,
+        'colsample_bytree': 0.8,
+        'random_state': 42,
+        'verbose': -1
+    }
+    if use_gpu and gpu_optimizer:
+        lgb_params = gpu_optimizer.get_lightgbm_params(lgb_base_params)
+    else:
+        lgb_params = {**lgb_base_params, 'n_jobs': -1}  # CPU multi-threading
+    lgb_model_cv = lgb.LGBMClassifier(**lgb_params)
 
-    xgb_model_cv = xgb.XGBClassifier(
-        max_depth=4,
-        learning_rate=0.05,
-        n_estimators=400,
-        min_child_weight=1,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        n_jobs=-1,
-        eval_metric='logloss'
-    )
+    # XGBoost configuration
+    xgb_base_params = {
+        'max_depth': 4,
+        'learning_rate': 0.05,
+        'n_estimators': n_estimators,
+        'min_child_weight': 1,
+        'subsample': 0.8,
+        'colsample_bytree': 0.8,
+        'random_state': 42,
+        'eval_metric': 'logloss'
+    }
+    if use_gpu and gpu_optimizer:
+        xgb_params = gpu_optimizer.get_xgboost_params(xgb_base_params)
+    else:
+        xgb_params = {**xgb_base_params, 'n_jobs': -1}  # CPU multi-threading
+    xgb_model_cv = xgb.XGBClassifier(**xgb_params)
 
     if verbose:
         print("  [1/3] Random Forest CV...")
@@ -149,32 +182,12 @@ def train_and_save_production_model(start_basho=None, end_basho=None, latest_bas
 
     if verbose:
         print("  [2/3] LightGBM...")
-    lgb_model = lgb.LGBMClassifier(
-        max_depth=6,
-        learning_rate=0.03,
-        n_estimators=400,
-        num_leaves=31,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        n_jobs=-1,
-        verbose=-1
-    )
+    lgb_model = lgb.LGBMClassifier(**lgb_params)
     lgb_model.fit(X, y)
 
     if verbose:
         print("  [3/3] XGBoost...")
-    xgb_model = xgb.XGBClassifier(
-        max_depth=4,
-        learning_rate=0.05,
-        n_estimators=400,
-        min_child_weight=1,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        n_jobs=-1,
-        eval_metric='logloss'
-    )
+    xgb_model = xgb.XGBClassifier(**xgb_params)
     xgb_model.fit(X, y)
 
     # Save everything needed for predictions
