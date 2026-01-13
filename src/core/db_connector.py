@@ -90,17 +90,19 @@ def get_connector() -> Connector:
         credentials = None
         if os.getenv('GOOGLE_APPLICATION_CREDENTIALS'):
             from google.oauth2 import service_account
+
+            # Load credentials with explicit universe_domain to prevent metadata lookup
             credentials = service_account.Credentials.from_service_account_file(
                 os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
             )
 
+            # Explicitly set universe_domain on the credentials object
+            # to prevent it from trying to fetch from metadata service
+            credentials = credentials.with_universe_domain("googleapis.com")
+
         if credentials:
-            # Explicitly pass credentials and disable universe domain check
-            # to avoid metadata service calls on Streamlit Cloud
-            _connector = Connector(
-                credentials=credentials,
-                universe_domain="googleapis.com"  # Explicitly set to avoid metadata lookup
-            )
+            # Pass credentials with universe domain already set
+            _connector = Connector(credentials=credentials)
         else:
             # No explicit credentials, let it auto-detect (for local development)
             _connector = Connector()
