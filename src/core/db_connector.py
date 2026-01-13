@@ -84,7 +84,21 @@ def get_connector() -> Connector:
     if _connector is None:
         # Try to set up Streamlit credentials first
         _setup_credentials_for_streamlit()
-        _connector = Connector()
+
+        # Check if we have credentials from Streamlit secrets or env var
+        # If so, create connector with explicit credentials to avoid metadata server
+        credentials = None
+        if os.getenv('GOOGLE_APPLICATION_CREDENTIALS'):
+            from google.oauth2 import service_account
+            credentials = service_account.Credentials.from_service_account_file(
+                os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+            )
+
+        if credentials:
+            _connector = Connector(credentials=credentials)
+        else:
+            # No explicit credentials, let it auto-detect (for local development)
+            _connector = Connector()
     return _connector
 
 
