@@ -3,6 +3,11 @@ Database connection utilities for Cloud SQL
 Supports both local proxy connection and Cloud SQL Python Connector
 """
 import os
+
+# Disable GCE metadata service BEFORE any other imports
+# to prevent timeout on non-GCE environments like Streamlit Cloud
+os.environ['GCE_METADATA_HOST'] = 'metadata.google.internal.invalid'
+
 import json
 import tempfile
 import pymysql
@@ -82,9 +87,6 @@ def get_connector() -> Connector:
     """Get or create the global connector instance"""
     global _connector
     if _connector is None:
-        # Disable GCE metadata service to prevent timeout on non-GCE environments
-        os.environ['GCE_METADATA_HOST'] = 'metadata.google.internal.invalid'
-
         # Try to set up Streamlit credentials first
         _setup_credentials_for_streamlit()
 
