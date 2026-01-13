@@ -8,6 +8,7 @@ dependencies = [
     # Database connectivity
     "pymysql==1.1.1",
     "sqlalchemy==2.0.35",
+    "cloud-sql-python-connector[pymysql]>=1.4.0",
     # Data processing
     "pandas==2.2.3",
     "numpy==2.1.3",

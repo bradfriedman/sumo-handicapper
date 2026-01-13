@@ -15,6 +15,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_auc_score
 
+from src.core.db_connector import get_connection, get_connection_params
+
 # Try importing XGBoost (requires libomp on Mac)
 try:
     import xgboost as xgb
@@ -110,6 +112,25 @@ class SumoDataLoader:
 
     def __init__(self, host='127.0.0.1', port=3307, user='dewsweeper',
                  password='dewsweeper_password123', database='dewsweeper3'):
+        """
+        Initialize the data loader.
+
+        Note: Connection parameters are stored for backward compatibility only.
+        The actual database connection uses db_connector.get_connection(), which
+        checks environment variables in the following priority:
+        1. CLOUD_SQL_CONNECTION_NAME (if set, uses Cloud SQL Python Connector)
+        2. DB_HOST/DB_PORT (if set, uses proxy connection)
+        3. Falls back to these constructor parameters
+
+        Args:
+            host: Database host (default: 127.0.0.1)
+            port: Database port (default: 3307)
+            user: Database user (default: dewsweeper)
+            password: Database password
+            database: Database name (default: dewsweeper3)
+        """
+        # Store connection parameters for backward compatibility
+        # However, if CLOUD_SQL_CONNECTION_NAME is set, it will be used instead
         self.conn_params = {
             'host': host,
             'port': port,
@@ -120,7 +141,8 @@ class SumoDataLoader:
 
     def load_raw_bouts(self) -> pd.DataFrame:
         """Load all valid bouts from database"""
-        conn = pymysql.connect(**self.conn_params)
+        # Use new connection method that supports both proxy and Cloud SQL Connector
+        conn = get_connection()
 
         query = """
         SELECT
@@ -222,7 +244,7 @@ class FeatureEngineer:
         if not self.db_config:
             return self._get_head_to_head(rikishi_a, rikishi_b)
 
-        conn = pymysql.connect(**self.db_config)
+        conn = get_connection()
         cursor = conn.cursor()
 
         query = """
@@ -255,7 +277,7 @@ class FeatureEngineer:
         if limit is None:
             limit = self.config.recent_bouts_window
 
-        conn = pymysql.connect(**self.db_config)
+        conn = get_connection()
         cursor = conn.cursor()
 
         query = """
@@ -289,7 +311,7 @@ class FeatureEngineer:
                 return rec['wins'], rec['losses']
             return 0, 0
 
-        conn = pymysql.connect(**self.db_config)
+        conn = get_connection()
         cursor = conn.cursor()
 
         query = """

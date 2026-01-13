@@ -8,33 +8,15 @@ import pymysql
 import sys
 import os
 from src.core.fantasy_points import calculate_expected_points, get_rank_label
+from src.core.db_connector import get_connection
 
-# Database configuration
-# Supports both local development (Cloud SQL Proxy) and Streamlit Cloud (direct connection)
-# In Streamlit Cloud, set secrets in the dashboard under Settings > Secrets
-try:
-    import streamlit as st
-    # Try to get config from Streamlit secrets first
-    DB_CONFIG = {
-        'host': st.secrets.get('DB_HOST', '127.0.0.1'),
-        'port': int(st.secrets.get('DB_PORT', 3307)),
-        'user': st.secrets.get('DB_USER', 'dewsweeper'),
-        'password': st.secrets.get('DB_PASSWORD', 'dewsweeper_password123'),
-        'database': st.secrets.get('DB_NAME', 'dewsweeper3')
-    }
-except (ImportError, FileNotFoundError):
-    # Fallback to environment variables or defaults (for CLI usage)
-    DB_CONFIG = {
-        'host': os.environ.get('DB_HOST', '127.0.0.1'),
-        'port': int(os.environ.get('DB_PORT', '3307')),
-        'user': os.environ.get('DB_USER', 'dewsweeper'),
-        'password': os.environ.get('DB_PASSWORD', 'dewsweeper_password123'),
-        'database': os.environ.get('DB_NAME', 'dewsweeper3')
-    }
+# Database configuration (maintained for backward compatibility with enable_live_data)
+# The actual connection will use db_connector.get_connection()
+DB_CONFIG = {'use_connector': True}
 
 def get_db_connection():
-    """Get database connection"""
-    return pymysql.connect(**DB_CONFIG)
+    """Get database connection using Cloud SQL Python Connector or proxy"""
+    return get_connection()
 
 def load_model():
     """Load the trained model package"""

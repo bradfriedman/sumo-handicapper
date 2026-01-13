@@ -55,11 +55,10 @@ def save_training_state(basho_id, day, num_bouts, accuracy):
 
 def get_latest_bout_in_db():
     """Query database for the most recent bout"""
-    loader = SumoDataLoader()
+    from src.core.db_connector import get_connection
 
     try:
-        import pymysql
-        connection = pymysql.connect(**loader.conn_params)
+        connection = get_connection()
         cursor = connection.cursor()
 
         query = """
