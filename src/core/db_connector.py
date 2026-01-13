@@ -95,7 +95,12 @@ def get_connector() -> Connector:
             )
 
         if credentials:
-            _connector = Connector(credentials=credentials)
+            # Explicitly pass credentials and disable universe domain check
+            # to avoid metadata service calls on Streamlit Cloud
+            _connector = Connector(
+                credentials=credentials,
+                universe_domain="googleapis.com"  # Explicitly set to avoid metadata lookup
+            )
         else:
             # No explicit credentials, let it auto-detect (for local development)
             _connector = Connector()
