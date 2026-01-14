@@ -18,12 +18,15 @@ from src.prediction.prediction_engine import (
     get_rikishi_by_id, DB_CONFIG
 )
 from src.core.fantasy_points import get_rank_label
+from src.core.db_connector import get_connection
 import pymysql
 from difflib import SequenceMatcher
 import json
 from src.training.update_model import (
     load_training_state, get_latest_bout_in_db, update_model
 )
+import requests
+from bs4 import BeautifulSoup
 
 # Preferences file path (stored in project root)
 PREFERENCES_FILE = os.path.join(project_root, '.streamlit_preferences.json')
@@ -61,6 +64,334 @@ def save_preferences(basho_id, day):
     except (IOError, OSError):
         # Silently fail if we can't write the file
         pass
+
+
+# ============================================================================
+# Fantasy Auto-Lineup Utility Functions
+# ============================================================================
+
+def basho_id_to_yyyymm(basho_id: int) -> str:
+    """
+    Convert basho_id to YYYYMM format for sumodb URLs.
+
+    Reference: basho_id 632 = 202601 (January 2026)
+    Basho held every 2 months: Jan(01), Mar(03), May(05), Jul(07), Sep(09), Nov(11)
+    6 basho per year
+
+    Args:
+        basho_id: Integer basho identifier
+
+    Returns:
+        YYYYMM string (e.g., "202601")
+    """
+    # Reference point
+    reference_basho_id = 632
+    reference_year = 2026
+    reference_month = 1  # January
+
+    # Calculate offset from reference
+    basho_offset = basho_id - reference_basho_id
+
+    # Convert offset to months (6 basho per year, every 2 months)
+    months_offset = basho_offset * 2
+
+    # Calculate target year and month
+    total_months = (reference_year * 12 + reference_month - 1) + months_offset
+    year = total_months // 12
+    month = (total_months % 12) + 1
+
+    # Format as YYYYMM
+    return f"{year:04d}{month:02d}"
+
+
+def get_current_basho_and_day() -> tuple[int, int]:
+    """
+    Auto-detect current basho_id and day from database.
+
+    Returns:
+        Tuple of (basho_id, day)
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Get current basho_id
+        cursor.execute('SELECT MAX(basho_id) FROM boi_lineupentry')
+        result = cursor.fetchone()
+        basho_id = result[0] if result and result[0] else DEFAULT_BASHO_ID
+
+        # Get current day
+        cursor.execute('SELECT MAX(day) FROM boi_bout WHERE basho_id = %s', (basho_id,))
+        result = cursor.fetchone()
+
+        if result and result[0]:
+            day = result[0] + 1
+        else:
+            day = 1
+
+        # Clamp day to [1, 15]
+        day = max(1, min(15, day))
+
+        return basho_id, day
+
+    except pymysql.Error as e:
+        st.error(f"Database error detecting current basho: {str(e)}")
+        return DEFAULT_BASHO_ID, DEFAULT_DAY
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_fantasy_squadrons(basho_id: int) -> list[dict]:
+    """
+    Load all fantasy squadrons for a basho.
+
+    Args:
+        basho_id: Tournament ID
+
+    Returns:
+        List of dicts with keys: id, oyakata_id, oyakata_shikona
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+        cursor.execute('''
+            SELECT id, oyakata_id, oyakata_shikona
+            FROM boi_bashosquadron
+            WHERE basho_id = %s
+            ORDER BY oyakata_shikona
+        ''', (basho_id,))
+
+        return cursor.fetchall()
+
+    except pymysql.Error as e:
+        st.error(f"Database error fetching squadrons: {str(e)}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_squadron_roster(basho_id: int, oyakata_id: int) -> list[dict]:
+    """
+    Get active squadron members for a given squadron.
+
+    Args:
+        basho_id: Tournament ID
+        oyakata_id: Squadron owner ID
+
+    Returns:
+        List of dicts with keys: rikishi_id, selection_order, shikona, rank, dob
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+        cursor.execute('''
+            SELECT sm.rikishi_id, sm.selection_order, obe.shikona, obe.rank, r.dob
+            FROM boi_squadronmember sm
+            JOIN boi_ozumobanzukeentry obe ON sm.rikishi_id = obe.rikishi_id
+                AND sm.basho_id = obe.basho_id
+            JOIN boi_rikishi r ON sm.rikishi_id = r.id
+            WHERE sm.basho_id = %s
+                AND sm.oyakata_id = %s
+                AND sm.is_active = 1
+            ORDER BY sm.selection_order ASC
+        ''', (basho_id, oyakata_id))
+
+        return cursor.fetchall()
+
+    except pymysql.Error as e:
+        st.error(f"Database error fetching roster: {str(e)}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def scrape_torikumi(basho_id: int, day: int) -> list[dict]:
+    """
+    Scrape torikumi (match schedule) from sumodb.sumogames.de.
+
+    Args:
+        basho_id: Tournament ID
+        day: Day number (1-15)
+
+    Returns:
+        List of dicts with keys: rikishi_a_name, rikishi_b_name
+    """
+    try:
+        yyyymm = basho_id_to_yyyymm(basho_id)
+        url = f"https://sumodb.sumogames.de/Results.aspx?b={yyyymm}&d={day}"
+
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Find all division markers
+        divisions = soup.find_all('strong')
+
+        # Find Makuuchi and Juryo markers
+        makuuchi_idx = None
+        juryo_idx = None
+
+        for i, tag in enumerate(divisions):
+            if 'Makuuchi' in tag.text:
+                makuuchi_idx = i
+            if 'Juryo' in tag.text and makuuchi_idx is not None:
+                juryo_idx = i
+                break
+
+        if makuuchi_idx is None:
+            st.warning("Could not find Makuuchi division in torikumi.")
+            return []
+
+        # Find the Makuuchi section
+        makuuchi_tag = divisions[makuuchi_idx]
+        juryo_tag = divisions[juryo_idx] if juryo_idx is not None else None
+
+        # Extract all rikishi links in Makuuchi section
+        bouts = []
+        current = makuuchi_tag.parent
+
+        while current:
+            current = current.find_next_sibling()
+            if not current:
+                break
+
+            # Stop at Juryo
+            if juryo_tag and current == juryo_tag.parent:
+                break
+
+            # Find all rikishi links in this section
+            links = current.find_all('a', href=lambda x: x and 'Rikishi.aspx?r=' in x)
+
+            # Pair them up as bouts (every 2 rikishi = 1 bout)
+            for i in range(0, len(links), 2):
+                if i + 1 < len(links):
+                    rikishi_a = links[i].get_text().strip()
+                    rikishi_b = links[i + 1].get_text().strip()
+                    bouts.append({
+                        'rikishi_a_name': rikishi_a,
+                        'rikishi_b_name': rikishi_b
+                    })
+
+        return bouts
+
+    except requests.exceptions.Timeout:
+        st.error("Timeout fetching torikumi from sumodb. Please try again.")
+        return []
+    except requests.exceptions.RequestException as e:
+        st.error(f"Failed to fetch torikumi: {str(e)}")
+        st.info("Check your internet connection and try again.")
+        return []
+    except Exception as e:
+        st.error(f"Error parsing torikumi data: {str(e)}")
+        return []
+
+
+def match_roster_to_opponents(roster: list[dict], torikumi: list[dict], basho_id: int) -> list[dict]:
+    """
+    Match squadron rikishi to their opponents from torikumi.
+
+    Args:
+        roster: List of roster members with keys: rikishi_id, shikona, rank, dob
+        torikumi: List of bouts with keys: rikishi_a_name, rikishi_b_name
+        basho_id: Tournament ID
+
+    Returns:
+        List of dicts with keys:
+        - your_rikishi_id, your_rikishi_name, your_rank, your_dob
+        - opponent_id, opponent_name, opponent_rank, opponent_dob (or None)
+        - has_match (bool)
+    """
+    results = []
+    conn = None
+    cursor = None
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+        for member in roster:
+            shikona = member['shikona']
+            opponent_name = None
+
+            # Search torikumi for exact match
+            for bout in torikumi:
+                if bout['rikishi_a_name'] == shikona:
+                    opponent_name = bout['rikishi_b_name']
+                    break
+                elif bout['rikishi_b_name'] == shikona:
+                    opponent_name = bout['rikishi_a_name']
+                    break
+
+            result = {
+                'your_rikishi_id': member['rikishi_id'],
+                'your_rikishi_name': shikona,
+                'your_rank': member['rank'],
+                'your_dob': member['dob'],
+                'has_match': opponent_name is not None
+            }
+
+            if opponent_name:
+                # Resolve opponent rikishi_id via database
+                cursor.execute('''
+                    SELECT obe.rikishi_id, obe.rank, r.dob
+                    FROM boi_ozumobanzukeentry obe
+                    JOIN boi_rikishi r ON obe.rikishi_id = r.id
+                    WHERE obe.basho_id = %s AND obe.shikona = %s
+                    LIMIT 1
+                ''', (basho_id, opponent_name))
+
+                opponent = cursor.fetchone()
+
+                if opponent:
+                    result['opponent_id'] = opponent['rikishi_id']
+                    result['opponent_name'] = opponent_name
+                    result['opponent_rank'] = opponent['rank']
+                    result['opponent_dob'] = opponent['dob']
+                else:
+                    # Opponent not found in database
+                    result['opponent_id'] = None
+                    result['opponent_name'] = opponent_name
+                    result['opponent_rank'] = None
+                    result['opponent_dob'] = None
+                    result['has_match'] = False
+            else:
+                # No match in torikumi
+                result['opponent_id'] = None
+                result['opponent_name'] = None
+                result['opponent_rank'] = None
+                result['opponent_dob'] = None
+
+            results.append(result)
+
+        return results
+
+    except pymysql.Error as e:
+        st.error(f"Database error matching opponents: {str(e)}")
+        return results
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 
 # Page configuration
 st.set_page_config(
@@ -436,7 +767,13 @@ def main():
     st.sidebar.header("🎯 Prediction Mode")
     mode = st.sidebar.radio(
         "Choose prediction mode:",
-        ["Single Bout Prediction", "Fantasy Roster (6 Bouts)", "Batch Predictions (CSV)", "Update Model"]
+        [
+            "Single Bout Prediction",
+            "Fantasy Roster (6 Bouts)",
+            "Fantasy Auto-Lineup",
+            "Batch Predictions (CSV)",
+            "Update Model"
+        ]
     )
 
     if mode == "Single Bout Prediction":
@@ -686,6 +1023,171 @@ def main():
                             st.error(f"❌ {result['error']}")
                         else:
                             display_prediction_results(result, result['name_a'], result['name_b'])
+
+    elif mode == "Fantasy Auto-Lineup":
+        st.header("🎯 Fantasy Auto-Lineup Optimizer")
+        st.info("""
+        **Auto-detect your current basho/day, select your squadron, and automatically analyze all scheduled
+        bouts for optimal lineup selection.**
+        """)
+
+        # Auto-detect basho and day
+        detected_basho, detected_day = get_current_basho_and_day()
+
+        st.success(f"📅 Auto-detected: Basho {detected_basho}, Day {detected_day}")
+
+        # Allow manual override
+        col1, col2 = st.columns(2)
+        with col1:
+            basho_id = st.number_input(
+                "Basho ID",
+                min_value=491,
+                max_value=700,
+                value=detected_basho,
+                help="Override auto-detected basho ID if needed",
+                key="auto_lineup_basho"
+            )
+        with col2:
+            day = st.number_input(
+                "Day",
+                min_value=1,
+                max_value=15,
+                value=detected_day,
+                help="Override auto-detected day if needed",
+                key="auto_lineup_day"
+            )
+
+        st.divider()
+
+        # Load squadrons
+        with st.spinner("Loading fantasy squadrons..."):
+            squadrons = get_fantasy_squadrons(basho_id)
+
+        if not squadrons:
+            st.warning("⚠️ No fantasy squadrons found for this basho.")
+            st.info("Squadrons may not be set up yet for the current tournament.")
+        else:
+            # Create squadron dropdown
+            squadron_names = [s['oyakata_shikona'] for s in squadrons]
+
+            # Default to 'Tadanisakari' if present
+            default_index = 0
+            if 'Tadanisakari' in squadron_names:
+                default_index = squadron_names.index('Tadanisakari')
+
+            selected_squadron_name = st.selectbox(
+                "Select Your Squadron:",
+                squadron_names,
+                index=default_index,
+                help="Choose your fantasy squadron"
+            )
+
+            # Get the selected squadron details
+            selected_squadron = next(s for s in squadrons if s['oyakata_shikona'] == selected_squadron_name)
+
+            st.divider()
+
+            # Analyze button
+            if st.button("🔮 Analyze Auto-Lineup", type="primary", use_container_width=True):
+                with st.spinner("Analyzing your lineup..."):
+                    # Get squadron roster
+                    roster = get_squadron_roster(basho_id, selected_squadron['oyakata_id'])
+
+                    if not roster:
+                        st.error("❌ No active roster members found for this squadron.")
+                    else:
+                        # Scrape torikumi
+                        torikumi = scrape_torikumi(basho_id, day)
+
+                        if not torikumi:
+                            st.warning("⚠️ No torikumi data found. The tournament may not have started yet.")
+                        else:
+                            # Match roster to opponents
+                            matches = match_roster_to_opponents(roster, torikumi, basho_id)
+
+                            # Run predictions for matched bouts
+                            predictions = []
+                            for match in matches:
+                                if match['has_match'] and match['opponent_id']:
+                                    try:
+                                        result = predict_bout(
+                                            model_package,
+                                            match['your_rikishi_id'],
+                                            match['opponent_id'],
+                                            basho_id,
+                                            day,
+                                            match['your_rank'],
+                                            match['opponent_rank'],
+                                            match['your_dob'],
+                                            match['opponent_dob']
+                                        )
+                                        result['name_a'] = match['your_rikishi_name']
+                                        result['name_b'] = match['opponent_name']
+                                        predictions.append(result)
+                                    except Exception as e:
+                                        st.error(f"Error predicting {match['your_rikishi_name']}: {str(e)}")
+
+                            # Display results
+                            st.success(f"✅ Found {len(predictions)} matches for your squadron " +
+                                     f"({len(roster)} members total)")
+
+                            if predictions:
+                                # Sort by expected fantasy points (descending)
+                                sorted_predictions = sorted(
+                                    predictions,
+                                    key=lambda x: x['fantasy_points']['rikishi_a_expected'],
+                                    reverse=True
+                                )
+
+                                # Summary table
+                                st.subheader("📊 Lineup Recommendations")
+
+                                summary_data = []
+                                for i, result in enumerate(sorted_predictions, 1):
+                                    win_indicator = "✓" if result['predicted_winner_id'] == \
+                                                          result['rikishi_a_id'] else "✗"
+                                    summary_data.append({
+                                        'Rank': f"#{i}",
+                                        'Win?': win_indicator,
+                                        'Bout': f"{result['name_a']} ({result['fantasy_points']['rikishi_a_expected']:.2f}) " +
+                                               f"vs {result['name_b']} ({result['fantasy_points']['rikishi_b_expected']:.2f})",
+                                        'Your Expected Pts': f"{result['fantasy_points']['rikishi_a_expected']:.2f}",
+                                        'Win Probability': f"{result['rikishi_a_win_probability'] * 100:.1f}%"
+                                    })
+
+                                st.table(pd.DataFrame(summary_data))
+
+                                # Top 4 expected points
+                                top_4_points = sum(
+                                    r['fantasy_points']['rikishi_a_expected']
+                                    for r in sorted_predictions[:4]
+                                )
+                                st.metric(
+                                    "🏆 Top 4 Expected Points",
+                                    f"{top_4_points:.2f}",
+                                    help="Sum of expected fantasy points from your top 4 rikishi"
+                                )
+
+                                st.info("💡 **Strategy Tip**: Consider starting the top 4 rikishi by expected points.")
+
+                                # Show unmatched members
+                                unmatched = [m for m in matches if not m['has_match']]
+                                if unmatched:
+                                    st.divider()
+                                    st.subheader("⏸️ No Matches Today")
+                                    for member in unmatched:
+                                        st.write(f"- {member['your_rikishi_name']}")
+
+                                # Detailed bout analysis
+                                st.divider()
+                                st.subheader("📋 Detailed Bout Analysis")
+
+                                for i, result in enumerate(sorted_predictions, 1):
+                                    with st.expander(
+                                        f"Bout #{i}: {result['name_a']} vs {result['name_b']}",
+                                        expanded=False
+                                    ):
+                                        display_prediction_results(result, result['name_a'], result['name_b'])
 
     elif mode == "Batch Predictions (CSV)":
         st.header("Batch Predictions from CSV")
