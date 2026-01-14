@@ -2,17 +2,16 @@
 Database connection utilities for Cloud SQL
 Supports both local proxy connection and Cloud SQL Python Connector
 """
+from google.cloud.sql.connector import Connector
+from typing import Optional, Callable, Any
+import pymysql
+import tempfile
+import json
 import os
 
 # Disable GCE metadata service BEFORE any other imports
 # to prevent timeout on non-GCE environments like Streamlit Cloud
 os.environ['GCE_METADATA_HOST'] = 'metadata.google.internal.invalid'
-
-import json
-import tempfile
-import pymysql
-from typing import Optional, Callable, Any
-from google.cloud.sql.connector import Connector
 
 
 # Global connector instance (reused across connections)
@@ -65,7 +64,8 @@ def _setup_credentials_for_streamlit():
             service_account_info = dict(st.secrets['gcp_service_account'])
 
             # Write to a temporary file (not deleted - needs to persist for app lifetime)
-            temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json')
+            temp_file = tempfile.NamedTemporaryFile(
+                mode='w', delete=False, suffix='.json')
             json.dump(service_account_info, temp_file)
             temp_file.close()
 
@@ -87,34 +87,34 @@ def get_connector() -> Connector:
     """Get or create the global connector instance"""
     global _connector
     if _connector is None:
-        # Try to set up Streamlit credentials first
         _setup_credentials_for_streamlit()
 
-        # Check if we have credentials from Streamlit secrets or env var
-        # If so, create connector with explicit credentials to avoid metadata server
         credentials = None
+        universe_domain = 'googleapis.com'
+
         if os.getenv('GOOGLE_APPLICATION_CREDENTIALS'):
             from google.oauth2 import service_account
 
-            # Read the service account file to get the info
             with open(os.getenv('GOOGLE_APPLICATION_CREDENTIALS'), 'r') as f:
                 service_account_info = json.load(f)
 
-            # Create credentials from info dict with BOTH scopes and universe_domain
-            # specified explicitly at creation time to prevent any metadata service lookups
-            # Reference: https://google-auth.readthedocs.io/en/latest/reference/google.oauth2.service_account.html
+            # Add universe_domain to the service account info dict
+            # When it's in the dict, it's treated as authoritative
+            service_account_info['universe_domain'] = universe_domain
+
+            # Now create credentials - it will read universe_domain from the dict
             credentials = service_account.Credentials.from_service_account_info(
                 service_account_info,
-                scopes=['https://www.googleapis.com/auth/sqlservice.admin'],
-                universe_domain='googleapis.com'
+                scopes=['https://www.googleapis.com/auth/sqlservice.admin']
             )
 
-        if credentials:
-            # Pass credentials with universe domain already set
-            _connector = Connector(credentials=credentials)
+            _connector = Connector(
+                credentials=credentials,
+                universe_domain=universe_domain
+            )
         else:
-            # No explicit credentials, let it auto-detect (for local development)
             _connector = Connector()
+
     return _connector
 
 
@@ -212,13 +212,13 @@ def get_connection() -> pymysql.Connection:
     """
     # Try to get config from Streamlit secrets first, then fall back to environment variables
     instance_connection_name = _get_streamlit_secret('CLOUD_SQL_CONNECTION_NAME') or \
-                                os.getenv('CLOUD_SQL_CONNECTION_NAME')
+        os.getenv('CLOUD_SQL_CONNECTION_NAME')
     db_user = _get_streamlit_secret('DB_USER') or \
-              os.getenv('DB_USER', DEFAULT_DB_USER)
+        os.getenv('DB_USER', DEFAULT_DB_USER)
     db_password = _get_streamlit_secret('DB_PASSWORD') or \
-                  os.getenv('DB_PASSWORD')
+        os.getenv('DB_PASSWORD')
     db_name = _get_streamlit_secret('DB_NAME') or \
-              os.getenv('DB_NAME', DEFAULT_DB_NAME)
+        os.getenv('DB_NAME', DEFAULT_DB_NAME)
 
     if instance_connection_name:
         # Use Cloud SQL Python Connector (production/Streamlit Cloud)
@@ -230,8 +230,10 @@ def get_connection() -> pymysql.Connection:
         )
     else:
         # Use proxy connection (local development)
-        host = _get_streamlit_secret('DB_HOST') or os.getenv('DB_HOST', '127.0.0.1')
-        port = int(_get_streamlit_secret('DB_PORT') or os.getenv('DB_PORT', '3307'))
+        host = _get_streamlit_secret(
+            'DB_HOST') or os.getenv('DB_HOST', '127.0.0.1')
+        port = int(_get_streamlit_secret('DB_PORT')
+                   or os.getenv('DB_PORT', '3307'))
 
         return get_connection_via_proxy(
             host=host,
