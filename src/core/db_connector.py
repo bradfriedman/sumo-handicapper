@@ -87,33 +87,62 @@ def get_connector() -> Connector:
     """Get or create the global connector instance"""
     global _connector
     if _connector is None:
-        _setup_credentials_for_streamlit()
-
-        credentials = None
         universe_domain = 'googleapis.com'
+        credentials = None
 
-        if os.getenv('GOOGLE_APPLICATION_CREDENTIALS'):
-            from google.oauth2 import service_account
+        # Check if running on Streamlit Cloud with secrets
+        try:
+            import streamlit as st
+            if hasattr(st, 'secrets') and 'gcp_service_account' in st.secrets:
+                from google.oauth2 import service_account
 
-            with open(os.getenv('GOOGLE_APPLICATION_CREDENTIALS'), 'r') as f:
-                service_account_info = json.load(f)
+                # Get service account info from Streamlit secrets
+                service_account_info = dict(st.secrets['gcp_service_account'])
 
-            # Add universe_domain to the service account info dict
-            # When it's in the dict, it's treated as authoritative
-            service_account_info['universe_domain'] = universe_domain
+                # Add universe_domain to prevent metadata lookups
+                # (Don't pass it as a parameter - just in the dict)
+                service_account_info['universe_domain'] = universe_domain
 
-            # Now create credentials - it will read universe_domain from the dict
-            credentials = service_account.Credentials.from_service_account_info(
-                service_account_info,
-                scopes=['https://www.googleapis.com/auth/sqlservice.admin']
-            )
+                # Create credentials directly from the secrets
+                # Do NOT pass universe_domain as parameter since it's in the dict
+                credentials = service_account.Credentials.from_service_account_info(
+                    service_account_info,
+                    scopes=['https://www.googleapis.com/auth/sqlservice.admin']
+                )
+        except ImportError:
+            # Streamlit not available - try file-based credentials
+            pass
 
+        # If we didn't get credentials from Streamlit, try file
+        if credentials is None:
+            creds_file = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+            if creds_file and os.path.exists(creds_file):
+                from google.oauth2 import service_account
+
+                with open(creds_file, 'r') as f:
+                    service_account_info = json.load(f)
+
+                # Add universe_domain to prevent metadata lookups
+                service_account_info['universe_domain'] = universe_domain
+
+                # Create credentials (universe_domain in dict, not as parameter)
+                credentials = service_account.Credentials.from_service_account_info(
+                    service_account_info,
+                    scopes=['https://www.googleapis.com/auth/sqlservice.admin']
+                )
+
+        # Now create connector with credentials
+        if credentials:
             _connector = Connector(
                 credentials=credentials,
                 universe_domain=universe_domain
             )
         else:
-            _connector = Connector()
+            raise ValueError(
+                "No credentials found. Please configure either:\n"
+                "1. Streamlit secrets with [gcp_service_account] section, or\n"
+                "2. GOOGLE_APPLICATION_CREDENTIALS environment variable"
+            )
 
     return _connector
 
