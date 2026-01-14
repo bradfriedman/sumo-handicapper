@@ -95,15 +95,21 @@ def get_connector() -> Connector:
         credentials = None
         if os.getenv('GOOGLE_APPLICATION_CREDENTIALS'):
             from google.oauth2 import service_account
+            import json
 
-            # Load credentials with explicit universe_domain to prevent metadata lookup
-            credentials = service_account.Credentials.from_service_account_file(
-                os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+            # Read the service account file to get the info
+            with open(os.getenv('GOOGLE_APPLICATION_CREDENTIALS'), 'r') as f:
+                service_account_info = json.load(f)
+
+            # Create credentials from info dict with explicit universe_domain
+            # This prevents any metadata service lookups
+            credentials = service_account.Credentials.from_service_account_info(
+                service_account_info,
+                scopes=['https://www.googleapis.com/auth/sqlservice.admin']
             )
 
-            # Explicitly set universe_domain on the credentials object
-            # to prevent it from trying to fetch from metadata service
-            credentials = credentials.with_universe_domain("googleapis.com")
+            # Manually set the universe_domain attribute to prevent lazy loading from metadata
+            credentials._universe_domain = "googleapis.com"
 
         if credentials:
             # Pass credentials with universe domain already set
