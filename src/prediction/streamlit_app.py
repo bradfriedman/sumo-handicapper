@@ -22,9 +22,10 @@ from src.core.db_connector import get_connection
 import pymysql
 from difflib import SequenceMatcher
 import json
-from src.training.update_model import (
-    load_training_state, get_latest_bout_in_db, update_model
-)
+# Temporarily commented out to avoid scipy import issues on Windows
+# from src.training.update_model import (
+#     load_training_state, get_latest_bout_in_db, update_model
+# )
 import requests
 from bs4 import BeautifulSoup
 
@@ -163,10 +164,10 @@ def get_fantasy_squadrons(basho_id: int) -> list[dict]:
         cursor = conn.cursor(pymysql.cursors.DictCursor)
 
         cursor.execute('''
-            SELECT id, oyakata_id, oyakata_shikona
+            SELECT id, oyakata_id, shikona
             FROM boi_bashosquadron
             WHERE basho_id = %s
-            ORDER BY oyakata_shikona
+            ORDER BY shikona
         ''', (basho_id,))
 
         return cursor.fetchall()
@@ -242,55 +243,38 @@ def scrape_torikumi(basho_id: int, day: int) -> list[dict]:
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Find all division markers
-        divisions = soup.find_all('strong')
+        makuuchi_bouts = []
 
-        # Find Makuuchi and Juryo markers
-        makuuchi_idx = None
-        juryo_idx = None
+        # Find all tables with class 'tk_table'
+        tables = soup.find_all('table', class_='tk_table')
 
-        for i, tag in enumerate(divisions):
-            if 'Makuuchi' in tag.text:
-                makuuchi_idx = i
-            if 'Juryo' in tag.text and makuuchi_idx is not None:
-                juryo_idx = i
+        for table in tables:
+            # Check if this table is the Makuuchi division
+            division_header = table.find('td', class_='tk_kaku')
+            
+            if division_header and "Makuuchi" in division_header.get_text():
+                # Iterate through the rows in this specific table
+                rows = table.find_all('tr')
+                
+                for row in rows:
+                    # Skip the header row (Makuuchi) and rows that aren't bouts
+                    east_cell = row.find('td', class_='tk_east')
+                    west_cell = row.find('td', class_='tk_west')
+                    
+                    if east_cell and west_cell:
+                        # Extract wrestler names from the <a> tag within the cell
+                        name_a = east_cell.find('a').get_text(strip=True)
+                        name_b = west_cell.find('a').get_text(strip=True)
+                        
+                        makuuchi_bouts.append({
+                            "rikishi_a_name": name_a,
+                            "rikishi_b_name": name_b
+                        })
+                
+                # Stop processing tables once the Makuuchi section is complete
                 break
-
-        if makuuchi_idx is None:
-            st.warning("Could not find Makuuchi division in torikumi.")
-            return []
-
-        # Find the Makuuchi section
-        makuuchi_tag = divisions[makuuchi_idx]
-        juryo_tag = divisions[juryo_idx] if juryo_idx is not None else None
-
-        # Extract all rikishi links in Makuuchi section
-        bouts = []
-        current = makuuchi_tag.parent
-
-        while current:
-            current = current.find_next_sibling()
-            if not current:
-                break
-
-            # Stop at Juryo
-            if juryo_tag and current == juryo_tag.parent:
-                break
-
-            # Find all rikishi links in this section
-            links = current.find_all('a', href=lambda x: x and 'Rikishi.aspx?r=' in x)
-
-            # Pair them up as bouts (every 2 rikishi = 1 bout)
-            for i in range(0, len(links), 2):
-                if i + 1 < len(links):
-                    rikishi_a = links[i].get_text().strip()
-                    rikishi_b = links[i + 1].get_text().strip()
-                    bouts.append({
-                        'rikishi_a_name': rikishi_a,
-                        'rikishi_b_name': rikishi_b
-                    })
-
-        return bouts
+        
+        return makuuchi_bouts
 
     except requests.exceptions.Timeout:
         st.error("Timeout fetching torikumi from sumodb. Please try again.")
@@ -1068,7 +1052,7 @@ def main():
             st.info("Squadrons may not be set up yet for the current tournament.")
         else:
             # Create squadron dropdown
-            squadron_names = [s['oyakata_shikona'] for s in squadrons]
+            squadron_names = [s['shikona'] for s in squadrons]
 
             # Default to 'Tadanisakari' if present
             default_index = 0
@@ -1083,7 +1067,7 @@ def main():
             )
 
             # Get the selected squadron details
-            selected_squadron = next(s for s in squadrons if s['oyakata_shikona'] == selected_squadron_name)
+            selected_squadron = next(s for s in squadrons if s['shikona'] == selected_squadron_name)
 
             st.divider()
 
@@ -1252,13 +1236,15 @@ def main():
 
     elif mode == "Update Model":
         st.header("🔧 Model Update")
+        st.warning("⚠️ Update Model mode temporarily disabled due to Windows security restrictions.")
         st.info("""
-        **Incremental Model Update**: Update the prediction model with new bout data without retraining from scratch.
-        The system tracks the most recent training state and only processes new data when available.
+        This mode requires scipy which is currently blocked by Windows Application Control.
+        Please contact your system administrator to unblock the .venv folder, or manually update the model.
         """)
-
-        # Load current training state
-        state = load_training_state()
+        # The entire Update Model functionality has been temporarily disabled
+        # Uncomment the import at the top and this section once scipy is unblocked
+        """
+        # state = load_training_state()
 
         st.subheader("📊 Current Model Status")
 
@@ -1396,6 +1382,7 @@ def main():
                 status_text.text("")
                 st.error(f"❌ Error during model update: {str(e)}")
                 st.write("Please check that all dependencies are installed and the database is accessible.")
+        """
 
     # Footer
     st.divider()
