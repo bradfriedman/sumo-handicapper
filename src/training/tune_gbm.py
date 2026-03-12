@@ -10,6 +10,7 @@ import xgboost as xgb
 import lightgbm as lgb
 from datetime import datetime
 import json
+import numpy as np
 
 print("="*80)
 print("GRADIENT BOOSTING HYPERPARAMETER TUNING")
@@ -188,8 +189,8 @@ for cfg in lgb_configs:
         model.fit(X_train, y_train)
 
         # Evaluate
-        y_pred = model.predict(X_test)
-        y_pred_proba = model.predict_proba(X_test)[:, 1]
+        y_pred = np.array(model.predict(X_test))
+        y_pred_proba = np.array(model.predict_proba(X_test))[:, 1]
 
         accuracy = accuracy_score(y_test, y_pred)
         roc_auc = roc_auc_score(y_test, y_pred_proba)
