@@ -8,7 +8,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, roc_auc_score
 import lightgbm as lgb
 import xgboost as xgb
-import pandas as pd
 
 print("="*80)
 print("TESTING WITH CHRONOLOGICAL TRAIN/TEST SPLIT")
@@ -37,7 +36,7 @@ X_test = X.iloc[split_idx:]
 y_train = y.iloc[:split_idx]
 y_test = y.iloc[split_idx:]
 
-print(f"Chronological split:")
+print("Chronological split:")
 print(f"  Train: {len(X_train)} samples (first 80%)")
 print(f"  Test:  {len(X_test)} samples (last 20%)")
 

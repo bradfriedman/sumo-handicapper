@@ -14,10 +14,7 @@ from datetime import datetime
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from src.training.save_best_model import train_and_save_production_model
-from src.core.sumo_predictor import SumoDataLoader
-import joblib
-from tqdm import tqdm
+from src.training.save_best_model import train_and_save_production_model  # noqa: E402
 
 # Training state file
 STATE_FILE = os.path.join(project_root, '.model_training_state.json')
@@ -136,11 +133,11 @@ def update_model(use_full_corpus=True, verbose=True):
         }
 
     if verbose:
-        print(f"\nNew data available! Updating model...")
+        print("\nNew data available! Updating model...")
         if use_full_corpus:
             print(f"Training on FULL CORPUS (all bouts through basho {latest_basho})")
         else:
-            print(f"Training on RECENT DATA ONLY")
+            print("Training on RECENT DATA ONLY")
         print()
 
     # Determine training range
@@ -188,7 +185,7 @@ def update_model(use_full_corpus=True, verbose=True):
             print("=" * 60)
             print(f"  New training bouts: {result['num_training_bouts']:,}")
             print(f"  New accuracy: {result['accuracy']*100:.2f}%")
-            print(f"  Model saved to: models/sumo_predictor_production.joblib")
+            print("  Model saved to: models/sumo_predictor_production.joblib")
             print()
 
         return {

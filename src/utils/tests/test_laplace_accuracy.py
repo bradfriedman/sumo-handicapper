@@ -5,10 +5,9 @@ from enhanced_features import EnhancedFeatureEngineer
 from sumo_predictor import ModelConfig, SumoDataLoader
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score
 import lightgbm as lgb
 import xgboost as xgb
-import numpy as np
 
 print("="*80)
 print("TESTING MODEL ACCURACY WITH LAPLACE SMOOTHING")

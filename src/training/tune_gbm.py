@@ -2,8 +2,10 @@
 Comprehensive Hyperparameter Tuning for XGBoost and LightGBM
 Trying to beat Random Forest's 60.17% accuracy
 """
-from sumo_predictor import ModelConfig, SumoDataLoader, FeatureEngineer, SumoPredictor
+from src.core.sumo_predictor import (ModelConfig, SumoDataLoader,
+                                      FeatureEngineer)
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, roc_auc_score
 import xgboost as xgb
 import lightgbm as lgb
 from datetime import datetime
@@ -18,7 +20,8 @@ print("\n" + "="*80)
 
 # Load and prepare data ONCE
 print("\nLoading data...")
-config = ModelConfig(elo_k_factor=32, recent_bouts_window=15)  # Best config found
+# Best config found
+config = ModelConfig(elo_k_factor=32, recent_bouts_window=15)
 loader = SumoDataLoader()
 bouts_df = loader.load_raw_bouts()
 
@@ -40,44 +43,61 @@ results = []
 # XGBoost configurations
 xgb_configs = [
     # Baseline (current)
-    {'name': 'XGB-Baseline', 'max_depth': 6, 'learning_rate': 0.1, 'n_estimators': 200, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'XGB-Baseline', 'max_depth': 6, 'learning_rate': 0.1, 'n_estimators': 200,
+        'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
 
     # Deeper trees
-    {'name': 'XGB-Deep', 'max_depth': 8, 'learning_rate': 0.1, 'n_estimators': 200, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
-    {'name': 'XGB-VeryDeep', 'max_depth': 10, 'learning_rate': 0.1, 'n_estimators': 200, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'XGB-Deep', 'max_depth': 8, 'learning_rate': 0.1, 'n_estimators': 200,
+        'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'XGB-VeryDeep', 'max_depth': 10, 'learning_rate': 0.1, 'n_estimators': 200,
+        'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
 
     # Shallower trees with more estimators
-    {'name': 'XGB-ShallowMany', 'max_depth': 4, 'learning_rate': 0.05, 'n_estimators': 400, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
-    {'name': 'XGB-VeryShallowMany', 'max_depth': 3, 'learning_rate': 0.05, 'n_estimators': 500, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'XGB-ShallowMany', 'max_depth': 4, 'learning_rate': 0.05, 'n_estimators': 400,
+        'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'XGB-VeryShallowMany', 'max_depth': 3, 'learning_rate': 0.05,
+        'n_estimators': 500, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
 
     # Lower learning rate with more estimators
-    {'name': 'XGB-SlowLearning', 'max_depth': 6, 'learning_rate': 0.05, 'n_estimators': 300, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
-    {'name': 'XGB-VerySlowLearning', 'max_depth': 6, 'learning_rate': 0.03, 'n_estimators': 400, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'XGB-SlowLearning', 'max_depth': 6, 'learning_rate': 0.05, 'n_estimators': 300,
+        'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'XGB-VerySlowLearning', 'max_depth': 6, 'learning_rate': 0.03,
+        'n_estimators': 400, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8},
 
     # Regularization variations
-    {'name': 'XGB-HighReg', 'max_depth': 6, 'learning_rate': 0.1, 'n_estimators': 200, 'min_child_weight': 3, 'subsample': 0.7, 'colsample_bytree': 0.7},
-    {'name': 'XGB-LowReg', 'max_depth': 6, 'learning_rate': 0.1, 'n_estimators': 200, 'min_child_weight': 1, 'subsample': 0.9, 'colsample_bytree': 0.9},
+    {'name': 'XGB-HighReg', 'max_depth': 6, 'learning_rate': 0.1, 'n_estimators': 200,
+        'min_child_weight': 3, 'subsample': 0.7, 'colsample_bytree': 0.7},
+    {'name': 'XGB-LowReg', 'max_depth': 6, 'learning_rate': 0.1, 'n_estimators': 200,
+        'min_child_weight': 1, 'subsample': 0.9, 'colsample_bytree': 0.9},
 ]
 
 # LightGBM configurations
 lgb_configs = [
     # Baseline (current)
-    {'name': 'LGB-Baseline', 'max_depth': 6, 'learning_rate': 0.1, 'n_estimators': 200, 'num_leaves': 31, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'LGB-Baseline', 'max_depth': 6, 'learning_rate': 0.1, 'n_estimators': 200,
+        'num_leaves': 31, 'subsample': 0.8, 'colsample_bytree': 0.8},
 
     # More leaves (LightGBM's key parameter)
-    {'name': 'LGB-MoreLeaves', 'max_depth': 8, 'learning_rate': 0.1, 'n_estimators': 200, 'num_leaves': 63, 'subsample': 0.8, 'colsample_bytree': 0.8},
-    {'name': 'LGB-ManyLeaves', 'max_depth': 10, 'learning_rate': 0.1, 'n_estimators': 200, 'num_leaves': 127, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'LGB-MoreLeaves', 'max_depth': 8, 'learning_rate': 0.1,
+        'n_estimators': 200, 'num_leaves': 63, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'LGB-ManyLeaves', 'max_depth': 10, 'learning_rate': 0.1,
+        'n_estimators': 200, 'num_leaves': 127, 'subsample': 0.8, 'colsample_bytree': 0.8},
 
     # Fewer leaves with more estimators
-    {'name': 'LGB-FewLeaves', 'max_depth': -1, 'learning_rate': 0.05, 'n_estimators': 400, 'num_leaves': 15, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'LGB-FewLeaves', 'max_depth': -1, 'learning_rate': 0.05,
+        'n_estimators': 400, 'num_leaves': 15, 'subsample': 0.8, 'colsample_bytree': 0.8},
 
     # Lower learning rate
-    {'name': 'LGB-SlowLearning', 'max_depth': 6, 'learning_rate': 0.05, 'n_estimators': 300, 'num_leaves': 31, 'subsample': 0.8, 'colsample_bytree': 0.8},
-    {'name': 'LGB-VerySlowLearning', 'max_depth': 6, 'learning_rate': 0.03, 'n_estimators': 400, 'num_leaves': 31, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'LGB-SlowLearning', 'max_depth': 6, 'learning_rate': 0.05,
+        'n_estimators': 300, 'num_leaves': 31, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'LGB-VerySlowLearning', 'max_depth': 6, 'learning_rate': 0.03,
+        'n_estimators': 400, 'num_leaves': 31, 'subsample': 0.8, 'colsample_bytree': 0.8},
 
     # Regularization variations
-    {'name': 'LGB-HighReg', 'max_depth': 6, 'learning_rate': 0.1, 'n_estimators': 200, 'num_leaves': 31, 'subsample': 0.7, 'colsample_bytree': 0.7},
-    {'name': 'LGB-Balanced', 'max_depth': 7, 'learning_rate': 0.08, 'n_estimators': 250, 'num_leaves': 50, 'subsample': 0.8, 'colsample_bytree': 0.8},
+    {'name': 'LGB-HighReg', 'max_depth': 6, 'learning_rate': 0.1, 'n_estimators': 200,
+        'num_leaves': 31, 'subsample': 0.7, 'colsample_bytree': 0.7},
+    {'name': 'LGB-Balanced', 'max_depth': 7, 'learning_rate': 0.08,
+        'n_estimators': 250, 'num_leaves': 50, 'subsample': 0.8, 'colsample_bytree': 0.8},
 ]
 
 best_accuracy = 0.6017  # Random Forest score to beat
@@ -93,8 +113,10 @@ print("="*80)
 
 for cfg in xgb_configs:
     iteration += 1
-    print(f"\n[{iteration}/{len(xgb_configs) + len(lgb_configs)}] Testing: {cfg['name']}")
-    print(f"  Params: max_depth={cfg['max_depth']}, lr={cfg['learning_rate']}, n_est={cfg['n_estimators']}")
+    print(
+        f"\n[{iteration}/{len(xgb_configs) + len(lgb_configs)}] Testing: {cfg['name']}")
+    print(
+        f"  Params: max_depth={cfg['max_depth']}, lr={cfg['learning_rate']}, n_est={cfg['n_estimators']}")
 
     try:
         model = xgb.XGBClassifier(
@@ -112,7 +134,6 @@ for cfg in xgb_configs:
         model.fit(X_train, y_train)
 
         # Evaluate
-        from sklearn.metrics import accuracy_score, roc_auc_score
         y_pred = model.predict(X_test)
         y_pred_proba = model.predict_proba(X_test)[:, 1]
 
@@ -133,7 +154,8 @@ for cfg in xgb_configs:
             best_accuracy = accuracy
             best_model_name = cfg['name']
             best_model = model
-            print(f"  🎯 NEW BEST! Beat Random Forest by {(accuracy - 0.6017)*100:.2f}%")
+            print(
+                f"  🎯 NEW BEST! Beat Random Forest by {(accuracy - 0.6017)*100:.2f}%")
 
     except Exception as e:
         print(f"  ❌ Failed: {e}")
@@ -145,8 +167,10 @@ print("="*80)
 
 for cfg in lgb_configs:
     iteration += 1
-    print(f"\n[{iteration}/{len(xgb_configs) + len(lgb_configs)}] Testing: {cfg['name']}")
-    print(f"  Params: max_depth={cfg['max_depth']}, lr={cfg['learning_rate']}, leaves={cfg['num_leaves']}")
+    print(
+        f"\n[{iteration}/{len(xgb_configs) + len(lgb_configs)}] Testing: {cfg['name']}")
+    print(
+        f"  Params: max_depth={cfg['max_depth']}, lr={cfg['learning_rate']}, leaves={cfg['num_leaves']}")
 
     try:
         model = lgb.LGBMClassifier(
@@ -184,7 +208,8 @@ for cfg in lgb_configs:
             best_accuracy = accuracy
             best_model_name = cfg['name']
             best_model = model
-            print(f"  🎯 NEW BEST! Beat Random Forest by {(accuracy - 0.6017)*100:.2f}%")
+            print(
+                f"  🎯 NEW BEST! Beat Random Forest by {(accuracy - 0.6017)*100:.2f}%")
 
     except Exception as e:
         print(f"  ❌ Failed: {e}")
@@ -203,12 +228,13 @@ print("-" * 80)
 
 for i, r in enumerate(results_sorted[:10], 1):
     marker = " ⭐" if r['accuracy'] >= 0.6017 else ""
-    print(f"{i:<6}{r['name']:<25}{r['accuracy']:<12.4f}{r['roc_auc']:<12.4f}{r['model_type']}{marker}")
+    print(
+        f"{i:<6}{r['name']:<25}{r['accuracy']:<12.4f}{r['roc_auc']:<12.4f}{r['model_type']}{marker}")
 
 print("\n" + "="*80)
 print("COMPARISON TO RANDOM FOREST")
 print("="*80)
-print(f"Random Forest: 60.17% accuracy")
+print("Random Forest: 60.17% accuracy")
 print(f"Best Model:    {best_accuracy:.2%} accuracy ({best_model_name})")
 
 if best_accuracy > 0.6017:

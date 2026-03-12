@@ -2,19 +2,17 @@
 Enhanced Feature Engineering with Momentum, Rank-Specific Performance, and Career Phase
 Goal: Beat 60.37% ensemble accuracy
 """
-import numpy as np
 from src.core.sumo_predictor import (
-    ModelConfig, SumoDataLoader, FeatureEngineer, EloRatingSystem
+    ModelConfig, SumoDataLoader, FeatureEngineer
 )
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
+from sklearn.metrics import accuracy_score, roc_auc_score
 import lightgbm as lgb
 import xgboost as xgb
 import pandas as pd
+import numpy as np
 from typing import Dict, Tuple, List
-from collections import deque
-from datetime import datetime
 from tqdm import tqdm
 
 
@@ -25,7 +23,8 @@ class EnhancedFeatureEngineer(FeatureEngineer):
         super().__init__(config)
 
         # Additional tracking for enhanced features
-        self.rank_specific_stats = {}  # (rikishi_id) -> {vs_higher: {w, l}, vs_lower: {w, l}, vs_yokozuna: {w, l}}
+        # (rikishi_id) -> {vs_higher: {w, l}, vs_lower: {w, l}, vs_yokozuna: {w, l}}
+        self.rank_specific_stats = {}
         self.rank_history = {}  # (rikishi_id) -> [(basho_id, rank)]
         self.momentum_decay = 0.5  # Exponential decay factor
 
@@ -78,7 +77,8 @@ class EnhancedFeatureEngineer(FeatureEngineer):
         recent_history = history[-3:]
         if len(recent_history) >= 2:
             # Lower rank number = better, so trend DOWN is good
-            short_trend = (recent_history[0][1] - recent_history[-1][1]) / len(recent_history)
+            short_trend = (
+                recent_history[0][1] - recent_history[-1][1]) / len(recent_history)
         else:
             short_trend = 0.0
 
@@ -107,12 +107,14 @@ class EnhancedFeatureEngineer(FeatureEngineer):
         self._init_rank_specific_stats(rikishi_b)
 
         # 1. MOMENTUM with exponential decay
-        recent_a = self.rikishi_stats[rikishi_a]['recent_bouts'][-20:]  # Use more history
+        # Use more history
+        recent_a = self.rikishi_stats[rikishi_a]['recent_bouts'][-20:]
         recent_b = self.rikishi_stats[rikishi_b]['recent_bouts'][-20:]
 
         features['rikishi_a_momentum'] = self._calculate_momentum(recent_a)
         features['rikishi_b_momentum'] = self._calculate_momentum(recent_b)
-        features['momentum_diff'] = features['rikishi_a_momentum'] - features['rikishi_b_momentum']
+        features['momentum_diff'] = features['rikishi_a_momentum'] - \
+            features['rikishi_b_momentum']
 
         # 2. RANK-SPECIFIC PERFORMANCE
         stats_a = self.rank_specific_stats[rikishi_a]
@@ -121,33 +123,41 @@ class EnhancedFeatureEngineer(FeatureEngineer):
         # Performance vs higher ranked opponents
         vs_higher_a = stats_a['vs_higher']
         total_vs_higher_a = vs_higher_a['wins'] + vs_higher_a['losses']
-        features['rikishi_a_vs_higher_rate'] = vs_higher_a['wins'] / total_vs_higher_a if total_vs_higher_a > 0 else 0.5
+        features['rikishi_a_vs_higher_rate'] = vs_higher_a['wins'] / \
+            total_vs_higher_a if total_vs_higher_a > 0 else 0.5
 
         vs_higher_b = stats_b['vs_higher']
         total_vs_higher_b = vs_higher_b['wins'] + vs_higher_b['losses']
-        features['rikishi_b_vs_higher_rate'] = vs_higher_b['wins'] / total_vs_higher_b if total_vs_higher_b > 0 else 0.5
+        features['rikishi_b_vs_higher_rate'] = vs_higher_b['wins'] / \
+            total_vs_higher_b if total_vs_higher_b > 0 else 0.5
 
         # Performance vs lower ranked opponents
         vs_lower_a = stats_a['vs_lower']
         total_vs_lower_a = vs_lower_a['wins'] + vs_lower_a['losses']
-        features['rikishi_a_vs_lower_rate'] = vs_lower_a['wins'] / total_vs_lower_a if total_vs_lower_a > 0 else 0.5
+        features['rikishi_a_vs_lower_rate'] = vs_lower_a['wins'] / \
+            total_vs_lower_a if total_vs_lower_a > 0 else 0.5
 
         vs_lower_b = stats_b['vs_lower']
         total_vs_lower_b = vs_lower_b['wins'] + vs_lower_b['losses']
-        features['rikishi_b_vs_lower_rate'] = vs_lower_b['wins'] / total_vs_lower_b if total_vs_lower_b > 0 else 0.5
+        features['rikishi_b_vs_lower_rate'] = vs_lower_b['wins'] / \
+            total_vs_lower_b if total_vs_lower_b > 0 else 0.5
 
         # Performance vs yokozuna specifically
         vs_yoko_a = stats_a['vs_yokozuna']
         total_vs_yoko_a = vs_yoko_a['wins'] + vs_yoko_a['losses']
-        features['rikishi_a_vs_yokozuna_rate'] = vs_yoko_a['wins'] / total_vs_yoko_a if total_vs_yoko_a > 0 else 0.5
+        features['rikishi_a_vs_yokozuna_rate'] = vs_yoko_a['wins'] / \
+            total_vs_yoko_a if total_vs_yoko_a > 0 else 0.5
 
         vs_yoko_b = stats_b['vs_yokozuna']
         total_vs_yoko_b = vs_yoko_b['wins'] + vs_yoko_b['losses']
-        features['rikishi_b_vs_yokozuna_rate'] = vs_yoko_b['wins'] / total_vs_yoko_b if total_vs_yoko_b > 0 else 0.5
+        features['rikishi_b_vs_yokozuna_rate'] = vs_yoko_b['wins'] / \
+            total_vs_yoko_b if total_vs_yoko_b > 0 else 0.5
 
         # 3. CAREER PHASE / RANK TREND
-        short_trend_a, long_trend_a = self._calculate_rank_trend(rikishi_a, basho_id, rank_a)
-        short_trend_b, long_trend_b = self._calculate_rank_trend(rikishi_b, basho_id, rank_b)
+        short_trend_a, long_trend_a = self._calculate_rank_trend(
+            rikishi_a, basho_id, rank_a)
+        short_trend_b, long_trend_b = self._calculate_rank_trend(
+            rikishi_b, basho_id, rank_b)
 
         features['rikishi_a_short_trend'] = short_trend_a
         features['rikishi_b_short_trend'] = short_trend_b
@@ -156,10 +166,13 @@ class EnhancedFeatureEngineer(FeatureEngineer):
         features['trend_diff'] = short_trend_a - short_trend_b
 
         # 4. FEATURE INTERACTIONS (most important)
-        features['elo_rank_interaction'] = features['elo_diff'] * features['rank_diff']
-        features['momentum_rank_interaction'] = features['momentum_diff'] * features['rank_diff']
+        features['elo_rank_interaction'] = features['elo_diff'] * \
+            features['rank_diff']
+        features['momentum_rank_interaction'] = features['momentum_diff'] * \
+            features['rank_diff']
         features['experience_age_interaction'] = features.get('experience_diff', 0) * (
-            features.get('rikishi_a_age_years', 25) - features.get('rikishi_b_age_years', 25)
+            features.get('rikishi_a_age_years', 25) -
+            features.get('rikishi_b_age_years', 25)
         )
 
         # 5. STREAK FEATURES
@@ -231,7 +244,8 @@ class EnhancedFeatureEngineer(FeatureEngineer):
             labels.append(0)
 
             # NOW update statistics for next bout
-            self.update_after_bout(bout, bout['winning_rikishi_id'], bout['losing_rikishi_id'])
+            self.update_after_bout(
+                bout, bout['winning_rikishi_id'], bout['losing_rikishi_id'])
 
         X = pd.DataFrame(features_list)
         y = pd.Series(labels, name='winner')
@@ -243,7 +257,7 @@ class EnhancedFeatureEngineer(FeatureEngineer):
         # Check for NaN values
         nan_counts = X.isna().sum()
         if nan_counts.any():
-            print(f"\nNaN values found:")
+            print("\nNaN values found:")
             print(nan_counts[nan_counts > 0])
             print("\nFilling NaN values...")
             for col in X.columns:
@@ -253,7 +267,8 @@ class EnhancedFeatureEngineer(FeatureEngineer):
                     X[col] = X[col].fillna(0)
 
         print(f"\nFinal dataset shape: {X.shape}")
-        print(f"NaN check after filling: {X.isna().sum().sum()} NaN values remain")
+        print(
+            f"NaN check after filling: {X.isna().sum().sum()} NaN values remain")
 
         return X, y
 
@@ -374,8 +389,8 @@ def main():
         verbose=-1
     )
     lgb_model.fit(X_train, y_train)
-    lgb_pred = lgb_model.predict(X_test)
-    lgb_proba = lgb_model.predict_proba(X_test)[:, 1]
+    lgb_pred = np.asarray(lgb_model.predict(X_test)).ravel()
+    lgb_proba = np.asarray(lgb_model.predict_proba(X_test))[:, 1]
     lgb_acc = accuracy_score(y_test, lgb_pred)
     lgb_auc = roc_auc_score(y_test, lgb_proba)
     print(f"   Accuracy: {lgb_acc:.4f}, ROC-AUC: {lgb_auc:.4f}")
@@ -416,9 +431,11 @@ def main():
     print("RESULTS COMPARISON")
     print("="*80)
 
-    print(f"\n{'Model':<20}{'Accuracy':<12}{'ROC-AUC':<12}{'vs Baseline':<15}{'Status'}")
+    print(
+        f"\n{'Model':<20}{'Accuracy':<12}{'ROC-AUC':<12}{'vs Baseline':<15}{'Status'}")
     print("-" * 80)
-    print(f"{'[Baseline] Old Ens.':<20}{'0.6037':<12}{'0.6538':<12}{'+0.00%':<15}{'Baseline'}")
+    print(
+        f"{'[Baseline] Old Ens.':<20}{'0.6037':<12}{'0.6538':<12}{'+0.00%':<15}{'Baseline'}")
     print("-" * 80)
 
     best_acc = 0.0
@@ -426,7 +443,8 @@ def main():
 
     for name, acc, auc in results:
         diff = (acc - 0.6037) * 100
-        status = "🎉 NEW BEST!" if acc > 0.6037 else ("✓ Matched" if acc == 0.6037 else "")
+        status = "🎉 NEW BEST!" if acc > 0.6037 else (
+            "✓ Matched" if acc == 0.6037 else "")
         print(f"{name:<20}{acc:<12.4f}{auc:<12.4f}{diff:+.2f}%{'':<10}{status}")
         if acc > best_acc:
             best_acc = acc
@@ -436,12 +454,13 @@ def main():
     print("FINAL VERDICT")
     print("="*80)
 
-    if best_acc > 0.6037:
+    if best_acc > 0.6037 and best_model is not None:
         improvement = (best_acc - 0.6037) * 100
-        print(f"\n🎉 SUCCESS! Enhanced features improved the model!")
+        print("\n🎉 SUCCESS! Enhanced features improved the model!")
         print(f"Best Model: {best_model}")
         print(f"Accuracy: {best_acc:.4f} ({improvement:+.2f}% improvement)")
-        print(f"\nApproximate additional correct predictions: {int(16288 * improvement / 100)}")
+        print(
+            f"\nApproximate additional correct predictions: {int(16288 * improvement / 100)}")
 
         # Feature importance
         if 'LightGBM' in best_model or 'Random Forest' in best_model:
@@ -454,10 +473,10 @@ def main():
                 }).sort_values('importance', ascending=False)
                 print(importances.head(15).to_string(index=False))
     else:
-        print(f"\n❌ Enhanced features did not improve accuracy.")
+        print("\n❌ Enhanced features did not improve accuracy.")
         print(f"Best enhanced: {best_acc:.4f}")
-        print(f"Baseline: 0.6037")
-        print(f"\nPossible reasons:")
+        print("Baseline: 0.6037")
+        print("\nPossible reasons:")
         print("  - New features may be too noisy")
         print("  - Already near the ceiling for this data")
         print("  - May need more hyperparameter tuning for new features")

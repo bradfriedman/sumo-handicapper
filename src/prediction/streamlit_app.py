@@ -4,30 +4,30 @@ Beautiful, reactive interface for predicting sumo wrestling outcomes
 """
 import sys
 import os
+import json
 
 # Add project root to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
-from src.prediction.prediction_engine import (
+import pymysql  # noqa: E402
+import requests  # noqa: E402
+import streamlit as st  # noqa: E402
+import pandas as pd  # noqa: E402
+import plotly.graph_objects as go  # noqa: E402
+from bs4 import BeautifulSoup  # noqa: E402
+from src.prediction.prediction_engine import (  # noqa: E402
     load_model, predict_bout, search_rikishi_by_name,
-    get_rikishi_by_id, DB_CONFIG
+    get_rikishi_by_id
 )
-from src.core.fantasy_points import get_rank_label
-from src.core.db_connector import get_connection
-import pymysql
-from difflib import SequenceMatcher
-import json
+from src.core.fantasy_points import get_rank_label  # noqa: E402
+from src.core.db_connector import get_connection  # noqa: E402
+
 # Temporarily commented out to avoid scipy import issues on Windows
 # from src.training.update_model import (
 #     load_training_state, get_latest_bout_in_db, update_model
 # )
-import requests
-from bs4 import BeautifulSoup
 
 # Preferences file path (stored in project root)
 PREFERENCES_FILE = os.path.join(project_root, '.streamlit_preferences.json')
@@ -170,7 +170,7 @@ def get_fantasy_squadrons(basho_id: int) -> list[dict]:
             ORDER BY shikona
         ''', (basho_id,))
 
-        return cursor.fetchall()
+        return list(cursor.fetchall())
 
     except pymysql.Error as e:
         st.error(f"Database error fetching squadrons: {str(e)}")
@@ -211,7 +211,7 @@ def get_squadron_roster(basho_id: int, oyakata_id: int) -> list[dict]:
             ORDER BY sm.selection_order ASC
         ''', (basho_id, oyakata_id))
 
-        return cursor.fetchall()
+        return list(cursor.fetchall())
 
     except pymysql.Error as e:
         st.error(f"Database error fetching roster: {str(e)}")
@@ -263,13 +263,16 @@ def scrape_torikumi(basho_id: int, day: int) -> list[dict]:
                     
                     if east_cell and west_cell:
                         # Extract wrestler names from the <a> tag within the cell
-                        name_a = east_cell.find('a').get_text(strip=True)
-                        name_b = west_cell.find('a').get_text(strip=True)
-                        
-                        makuuchi_bouts.append({
-                            "rikishi_a_name": name_a,
-                            "rikishi_b_name": name_b
-                        })
+                        east_a = east_cell.find('a')
+                        west_a = west_cell.find('a')
+                        if east_a and west_a:
+                            name_a = east_a.get_text(strip=True)
+                            name_b = west_a.get_text(strip=True)
+
+                            makuuchi_bouts.append({
+                                "rikishi_a_name": name_a,
+                                "rikishi_b_name": name_b
+                            })
                 
                 # Stop processing tables once the Makuuchi section is complete
                 break
@@ -741,7 +744,7 @@ def main():
         try:
             training_date = datetime.fromisoformat(model_package['training_date'])
             st.sidebar.caption(f"Updated: {training_date.strftime('%Y-%m-%d %H:%M')}")
-        except:
+        except ValueError:
             st.sidebar.caption(f"Updated: {model_package['training_date']}")
 
     st.sidebar.success("📡 Live data enabled")
@@ -926,8 +929,9 @@ def main():
                             bout['dob_a'],
                             bout['dob_b']
                         )
-                        result['name_a'] = bout['name_a']
-                        result['name_b'] = bout['name_b']
+                        if 'error' not in result:
+                            result['name_a'] = bout['name_a']
+                            result['name_b'] = bout['name_b']
                         results.append(result)
 
                 # Save preferences
@@ -1105,9 +1109,12 @@ def main():
                                             match['your_dob'],
                                             match['opponent_dob']
                                         )
-                                        result['name_a'] = match['your_rikishi_name']
-                                        result['name_b'] = match['opponent_name']
-                                        predictions.append(result)
+                                        if 'error' not in result:
+                                            result['name_a'] = match['your_rikishi_name']
+                                            result['name_b'] = match['opponent_name']
+                                            predictions.append(result)
+                                        else:
+                                            st.error(f"Error predicting {match['your_rikishi_name']}: {result['error']}")
                                     except Exception as e:
                                         st.error(f"Error predicting {match['your_rikishi_name']}: {str(e)}")
 
@@ -1201,7 +1208,7 @@ def main():
                         progress_bar = st.progress(0)
                         results = []
 
-                        for idx, row in df.iterrows():
+                        for pos, (_, row) in enumerate(df.iterrows()):
                             result = predict_bout(
                                 model_package,
                                 row['rikishi_a_id'],
@@ -1214,7 +1221,7 @@ def main():
                                 row.get('rikishi_b_dob')
                             )
                             results.append(result)
-                            progress_bar.progress((idx + 1) / len(df))
+                            progress_bar.progress((pos + 1) / len(df))
 
                         st.success(f"✅ Completed {len(results)} predictions!")
 

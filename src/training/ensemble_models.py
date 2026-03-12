@@ -6,7 +6,7 @@ from sumo_predictor import ModelConfig, SumoDataLoader, FeatureEngineer
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
+from sklearn.metrics import accuracy_score, roc_auc_score
 import lightgbm as lgb
 import xgboost as xgb
 import numpy as np
@@ -197,7 +197,7 @@ opt_proba = 0.45 * rf_pred_proba + 0.45 * lgb_pred_proba + 0.10 * xgb_pred_proba
 opt_pred = (opt_proba >= 0.5).astype(int)
 opt_acc = accuracy_score(y_test, opt_pred)
 opt_auc = roc_auc_score(y_test, opt_proba)
-print(f"   Weights: RF=0.45, LGB=0.45, XGB=0.10")
+print("   Weights: RF=0.45, LGB=0.45, XGB=0.10")
 print(f"   Accuracy: {opt_acc:.4f}, ROC-AUC: {opt_auc:.4f}")
 results.append(('Optimized 45-45-10', opt_acc, opt_auc))
 if opt_acc > best_accuracy:
@@ -260,7 +260,7 @@ print("="*80)
 
 if best_accuracy > 0.6017:
     improvement = (best_accuracy - 0.6017) * 100
-    print(f"\n🎉 SUCCESS! Ensemble beats individual models!")
+    print("\n🎉 SUCCESS! Ensemble beats individual models!")
     print(f"Best Ensemble: {best_name}")
     print(f"Accuracy: {best_accuracy:.4f} ({improvement:+.2f}% improvement)")
 
@@ -281,7 +281,7 @@ if best_accuracy > 0.6017:
     }, ensemble_file)
     print(f"\nBest ensemble saved to: {ensemble_file}")
 else:
-    print(f"\n❌ No ensemble beat the baseline of 60.17%")
+    print("\n❌ No ensemble beat the baseline of 60.17%")
     print(f"Best ensemble: {best_name} with {best_accuracy:.4f}")
     print("\nIndividual models (RF or LGB) remain the best choice.")
     print("The models are already very strong and hard to improve with ensembling.")

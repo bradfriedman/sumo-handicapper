@@ -1,7 +1,8 @@
 """
 Quick Iterative Improvement - Test key hyperparameters
 """
-from iterative_improve import test_configuration, ModelConfig
+from iterative_improve import test_configuration
+from ..core.sumo_predictor import ModelConfig
 
 # Test 4 key configurations
 configs = [

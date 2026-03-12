@@ -5,12 +5,9 @@ Usage:
   python3 -m src.prediction.predict_by_name --interactive         # Interactive mode with name lookup
   python3 -m src.prediction.predict_by_name --name1 "Hakuho" --name2 "Asashoryu" --basho 630 --day 5
 """
-import pandas as pd
-import pymysql
 import argparse
-import sys
-from src.prediction.prediction_engine import load_model, predict_bout, search_rikishi_by_name, DB_CONFIG
-from src.core.fantasy_points import calculate_expected_points, get_rank_label
+from src.prediction.prediction_engine import load_model, predict_bout, search_rikishi_by_name
+from src.core.fantasy_points import get_rank_label
 
 def select_rikishi(name_query, basho_id, rikishi_label="Rikishi"):
     """
@@ -266,7 +263,7 @@ def interactive_mode_with_names(model_package):
                         if h2h_total > 0:
                             print(f"\n📊 Career Head-to-Head: {h2h['rikishi_a_wins']}-{h2h['rikishi_b_wins']} ({names_dict['rikishi1_name']} vs {names_dict['rikishi2_name']})")
                         else:
-                            print(f"\n📊 Career Head-to-Head: 0-0 (first meeting)")
+                            print("\n📊 Career Head-to-Head: 0-0 (first meeting)")
 
                     # Fantasy points
                     fp = result['fantasy_points']
@@ -365,7 +362,7 @@ Examples:
                     if h2h_total > 0:
                         print(f"\n📊 Career Head-to-Head: {h2h['rikishi_a_wins']}-{h2h['rikishi_b_wins']} ({names_dict['rikishi1_name']} vs {names_dict['rikishi2_name']})")
                     else:
-                        print(f"\n📊 Career Head-to-Head: 0-0 (first meeting)")
+                        print("\n📊 Career Head-to-Head: 0-0 (first meeting)")
 
                 # Fantasy points
                 fp = result['fantasy_points']

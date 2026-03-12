@@ -5,9 +5,8 @@ Compares training time and accuracy between:
 1. Original CPU-only training (n_jobs=-1)
 2. New GPU-optimized training (device=cuda)
 """
-import os
-import sys
 import time
+import numpy as np
 from src.training.enhanced_features import EnhancedFeatureEngineer
 from src.core.sumo_predictor import ModelConfig, SumoDataLoader
 from src.utils.gpu_optimizer import GPUOptimizer
@@ -15,7 +14,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 import lightgbm as lgb
 import xgboost as xgb
-import numpy as np
 
 
 def format_time(seconds):
@@ -73,7 +71,8 @@ def train_cpu_only(X, y, n_estimators=400):
     )
     lgb_model.fit(X, y)
     lgb_time = time.time() - start
-    lgb_acc = accuracy_score(y, lgb_model.predict(X))
+    lgb_pred = np.asarray(lgb_model.predict(X)).ravel()
+    lgb_acc = accuracy_score(y, lgb_pred)
     results['lgb'] = {'time': lgb_time, 'accuracy': lgb_acc}
     print(f"  Time: {format_time(lgb_time)}, Accuracy: {lgb_acc:.4f}")
 
@@ -153,7 +152,8 @@ def train_gpu_optimized(X, y, gpu_optimizer):
     lgb_model = lgb.LGBMClassifier(**lgb_params)
     lgb_model.fit(X, y)
     lgb_time = time.time() - start
-    lgb_acc = accuracy_score(y, lgb_model.predict(X))
+    lgb_pred = np.asarray(lgb_model.predict(X)).ravel()
+    lgb_acc = accuracy_score(y, lgb_pred)
     results['lgb'] = {'time': lgb_time, 'accuracy': lgb_acc}
     print(f"  Time: {format_time(lgb_time)}, Accuracy: {lgb_acc:.4f}")
 
@@ -193,7 +193,8 @@ def print_comparison(cpu_results, gpu_results):
     print("PERFORMANCE COMPARISON")
     print("="*80)
 
-    print("\n{:<15} {:<15} {:<15} {:<15}".format("Model", "CPU Time", "GPU Time", "Speedup"))
+    print("\n{:<15} {:<15} {:<15} {:<15}".format(
+        "Model", "CPU Time", "GPU Time", "Speedup"))
     print("-" * 80)
 
     for model in ['rf', 'lgb', 'xgb']:
@@ -217,14 +218,15 @@ def print_comparison(cpu_results, gpu_results):
         "TOTAL",
         format_time(cpu_total),
         format_time(gpu_total),
-        f"{speedup:.2f}x"
+        f"{total_speedup:.2f}x"
     ))
 
     print("\n" + "="*80)
     print("ACCURACY COMPARISON")
     print("="*80)
 
-    print("\n{:<15} {:<20} {:<20} {:<15}".format("Model", "CPU Accuracy", "GPU Accuracy", "Difference"))
+    print("\n{:<15} {:<20} {:<20} {:<15}".format(
+        "Model", "CPU Accuracy", "GPU Accuracy", "Difference"))
     print("-" * 80)
 
     for model in ['rf', 'lgb', 'xgb']:
@@ -247,12 +249,15 @@ def print_comparison(cpu_results, gpu_results):
 
     print("\nSUMMARY:")
     if total_speedup > 1.0:
-        print(f"  GPU optimization is {total_speedup:.2f}x faster than CPU-only")
-        print(f"  Time saved: {format_time(time_saved)} ({time_saved_pct:.1f}%)")
+        print(
+            f"  GPU optimization is {total_speedup:.2f}x faster than CPU-only")
+        print(
+            f"  Time saved: {format_time(time_saved)} ({time_saved_pct:.1f}%)")
     elif total_speedup < 1.0:
-        print(f"  CPU-only is {1/total_speedup:.2f}x faster (GPU overhead not worth it for this dataset)")
+        print(
+            f"  CPU-only is {1/total_speedup:.2f}x faster (GPU overhead not worth it for this dataset)")
     else:
-        print(f"  Performance is similar between CPU and GPU")
+        print("  Performance is similar between CPU and GPU")
 
     print("="*80)
 
@@ -304,9 +309,9 @@ def main():
         'gpu_memory_mb': gpu_optimizer.gpu_memory_mb,
         'cuda_available': gpu_optimizer.cuda_available,
         'cpu_results': {k: {'time': v['time'], 'accuracy': v.get('accuracy', 0)}
-                       for k, v in cpu_results.items()},
+                        for k, v in cpu_results.items()},
         'gpu_results': {k: {'time': v['time'], 'accuracy': v.get('accuracy', 0)}
-                       for k, v in gpu_results.items()}
+                        for k, v in gpu_results.items()}
     }
 
     output_file = 'benchmark_gpu_vs_cpu_results.json'

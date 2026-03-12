@@ -2,18 +2,15 @@
 Save the best model + feature engineer state for making predictions
 """
 import os
-import sys
 from src.training.enhanced_features import EnhancedFeatureEngineer
 from src.core.sumo_predictor import ModelConfig, SumoDataLoader
 from src.utils.gpu_optimizer import GPUOptimizer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score, StratifiedKFold
-from sklearn.metrics import accuracy_score
 import lightgbm as lgb
 import xgboost as xgb
 import joblib
 from datetime import datetime
-import numpy as np
 
 def train_and_save_production_model(start_basho=None, end_basho=None, latest_basho=None, latest_day=None, verbose=True, use_gpu=False):
     """
@@ -75,7 +72,7 @@ def train_and_save_production_model(start_basho=None, end_basho=None, latest_bas
 
     if verbose:
         print(f"\nTrained on {len(bouts_df)} bouts")
-        print(f"Feature engineer now has:")
+        print("Feature engineer now has:")
         print(f"  - Elo ratings for {len(engineer.elo_system.ratings)} wrestlers")
         print(f"  - Historical stats for {len(engineer.rikishi_stats)} wrestlers")
 
@@ -143,7 +140,7 @@ def train_and_save_production_model(start_basho=None, end_basho=None, latest_bas
 
     if verbose:
         print("  [2/3] LightGBM CV...")
-    lgb_scores = cross_val_score(lgb_model_cv, X, y, cv=cv, scoring='accuracy', n_jobs=-1)
+    lgb_scores = cross_val_score(lgb_model_cv, X, y, cv=cv, scoring='accuracy', n_jobs=-1)  # type: ignore[arg-type]
 
     if verbose:
         print("  [3/3] XGBoost CV...")
@@ -158,7 +155,7 @@ def train_and_save_production_model(start_basho=None, end_basho=None, latest_bas
     accuracy = ensemble_cv_scores.mean()
 
     if verbose:
-        print(f"\n5-Fold Cross-Validation Results:")
+        print("\n5-Fold Cross-Validation Results:")
         print(f"  Random Forest:  {rf_scores.mean():.4f} (+/- {rf_scores.std() * 2:.4f})")
         print(f"  LightGBM:       {lgb_scores.mean():.4f} (+/- {lgb_scores.std() * 2:.4f})")
         print(f"  XGBoost:        {xgb_scores.mean():.4f} (+/- {xgb_scores.std() * 2:.4f})")
@@ -219,10 +216,10 @@ def train_and_save_production_model(start_basho=None, end_basho=None, latest_bas
 
     if verbose:
         print(f"\n✅ Model saved to: {filename}")
-        print(f"\nThis package contains:")
-        print(f"  - Trained ensemble models (RF + LGB + XGB)")
-        print(f"  - Feature engineer with Elo ratings and historical stats")
-        print(f"  - Configuration and metadata")
+        print("\nThis package contains:")
+        print("  - Trained ensemble models (RF + LGB + XGB)")
+        print("  - Feature engineer with Elo ratings and historical stats")
+        print("  - Configuration and metadata")
         print(f"\n5-Fold CV Ensemble Accuracy: {accuracy*100:.2f}% (+/- {ensemble_cv_scores.std() * 2 * 100:.2f}%)")
         print("="*80)
 

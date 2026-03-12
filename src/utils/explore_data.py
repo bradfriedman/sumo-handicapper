@@ -1,17 +1,14 @@
 """
 Quick data exploration script for sumo database
 """
-import pymysql
 import pandas as pd
+from sqlalchemy import create_engine
 
 # Database connection
-conn = pymysql.connect(
-    host='127.0.0.1',
-    port=3307,
-    user='dewsweeper',
-    password='dewsweeper_password123',
-    database='dewsweeper3'
+engine = create_engine(
+    'mysql+pymysql://dewsweeper:dewsweeper_password123@127.0.0.1:3307/dewsweeper3'
 )
+conn = engine.connect()
 
 print("=" * 80)
 print("SUMO DATABASE EXPLORATION")
@@ -137,6 +134,7 @@ print("\n8. BANZUKE (RANKING) DATA:")
 print(df.to_string(index=False))
 
 conn.close()
+engine.dispose()
 print("\n" + "=" * 80)
 print("EXPLORATION COMPLETE")
 print("=" * 80)

@@ -5,10 +5,46 @@ Used by both CLI scripts and Streamlit UI
 import joblib
 import pandas as pd
 import pymysql
-import sys
 import os
-from src.core.fantasy_points import calculate_expected_points, get_rank_label
+from typing import Any, NotRequired, TypedDict
+from src.core.fantasy_points import calculate_expected_points
 from src.core.db_connector import get_connection
+
+# Type definitions for prediction results
+class HeadToHeadDict(TypedDict):
+    rikishi_a_wins: int
+    rikishi_b_wins: int
+    rikishi_a_win_rate: float
+
+
+class FantasyPointsDict(TypedDict):
+    rikishi_a_expected: float | None
+    rikishi_b_expected: float | None
+    rikishi_a_potential: float | None
+    rikishi_b_potential: float | None
+    rikishi_a_rank: int | None
+    rikishi_b_rank: int | None
+
+
+class PredictionResultDict(TypedDict):
+    rikishi_a_id: int
+    rikishi_b_id: int
+    rikishi_a_win_probability: float
+    rikishi_b_win_probability: float
+    predicted_winner_id: int
+    confidence: float
+    individual_predictions: dict[str, float]
+    key_features: dict[str, Any]
+    head_to_head: HeadToHeadDict
+    fantasy_points: FantasyPointsDict
+    name_a: NotRequired[str]
+    name_b: NotRequired[str]
+
+
+class PredictionErrorDict(TypedDict):
+    error: str
+    suggestion: str | None
+
 
 # Database configuration (maintained for backward compatibility with enable_live_data)
 # The actual connection will use db_connector.get_connection()
@@ -129,14 +165,22 @@ def get_rikishi_by_id(rikishi_id, basho_id=None):
 
     return result
 
-def predict_bout(model_package, rikishi_a_id, rikishi_b_id, basho_id, day,
-                 rikishi_a_rank=None, rikishi_b_rank=None,
-                 rikishi_a_dob=None, rikishi_b_dob=None):
+def predict_bout(
+    model_package: dict[str, Any],
+    rikishi_a_id: int,
+    rikishi_b_id: int,
+    basho_id: int,
+    day: int,
+    rikishi_a_rank: int | None = None,
+    rikishi_b_rank: int | None = None,
+    rikishi_a_dob: str | None = None,
+    rikishi_b_dob: str | None = None,
+) -> PredictionResultDict | PredictionErrorDict:
     """
     Predict the outcome of a bout between two rikishi
 
     Returns:
-        dict with prediction results
+        PredictionResultDict with prediction results, or PredictionErrorDict on error
     """
     engineer = model_package['feature_engineer']
     models = model_package['models']

@@ -8,9 +8,9 @@ Usage:
 """
 import pandas as pd
 import argparse
-import sys
 from src.prediction.prediction_engine import load_model, predict_bout
 from src.core.fantasy_points import get_rank_label
+
 
 def predict_from_csv(model_package, csv_file):
     """Predict outcomes for bouts in a CSV file"""
@@ -31,14 +31,14 @@ def predict_from_csv(model_package, csv_file):
     if missing:
         print(f"❌ Error: CSV missing required columns: {missing}")
         print(f"   Required columns: {required}")
-        print(f"   Optional columns: rikishi_a_rank, rikishi_b_rank, rikishi_a_dob, rikishi_b_dob")
+        print("   Optional columns: rikishi_a_rank, rikishi_b_rank, rikishi_a_dob, rikishi_b_dob")
         return
 
     print(f"Found {len(df)} bouts to predict\n")
     print("="*80)
 
     results = []
-    for idx, row in df.iterrows():
+    for bout_num, (_, row) in enumerate(df.iterrows(), start=1):
         result = predict_bout(
             model_package,
             row['rikishi_a_id'],
@@ -52,12 +52,14 @@ def predict_from_csv(model_package, csv_file):
         )
 
         if 'error' in result:
-            print(f"Bout {idx+1}: ❌ {result['error']}")
+            print(f"Bout {bout_num}: ❌ {result['error']}")
         else:
             winner_id = result['predicted_winner_id']
             conf = result['confidence'] * 100
-            print(f"Bout {idx+1}: Rikishi {row['rikishi_a_id']} vs {row['rikishi_b_id']}")
-            print(f"  → Predicted winner: Rikishi {winner_id} ({conf:.1f}% confidence)")
+            print(
+                f"Bout {bout_num}: Rikishi {row['rikishi_a_id']} vs {row['rikishi_b_id']}")
+            print(
+                f"  → Predicted winner: Rikishi {winner_id} ({conf:.1f}% confidence)")
             print(f"  → Win probabilities: A={result['rikishi_a_win_probability']:.1%}, "
                   f"B={result['rikishi_b_win_probability']:.1%}")
 
@@ -70,6 +72,7 @@ def predict_from_csv(model_package, csv_file):
     results_df.to_csv(output_file, index=False)
     print("="*80)
     print(f"✅ Predictions saved to: {output_file}")
+
 
 def interactive_mode(model_package):
     """Interactive mode for manual entry"""
@@ -89,7 +92,8 @@ def interactive_mode(model_package):
                 try:
                     rikishi_a_id = int(rikishi_a)
                 except ValueError:
-                    print("❌ Invalid input. Please enter a valid integer for Rikishi A ID.")
+                    print(
+                        "❌ Invalid input. Please enter a valid integer for Rikishi A ID.")
 
             # Get Rikishi B ID
             rikishi_b_id = None
@@ -100,7 +104,8 @@ def interactive_mode(model_package):
                 try:
                     rikishi_b_id = int(rikishi_b)
                 except ValueError:
-                    print("❌ Invalid input. Please enter a valid integer for Rikishi B ID.")
+                    print(
+                        "❌ Invalid input. Please enter a valid integer for Rikishi B ID.")
 
             # Get Basho ID
             basho_id = None
@@ -125,11 +130,14 @@ def interactive_mode(model_package):
                         print("❌ Day must be between 1 and 15.")
                         day_num = None
                 except ValueError:
-                    print("❌ Invalid input. Please enter a valid integer for Day (1-15).")
+                    print(
+                        "❌ Invalid input. Please enter a valid integer for Day (1-15).")
 
             # Optional inputs
-            rank_a = input("Rikishi A rank (optional, press Enter to skip): ").strip()
-            rank_b = input("Rikishi B rank (optional, press Enter to skip): ").strip()
+            rank_a = input(
+                "Rikishi A rank (optional, press Enter to skip): ").strip()
+            rank_b = input(
+                "Rikishi B rank (optional, press Enter to skip): ").strip()
 
             # Convert optional inputs
             rank_a_val = None
@@ -165,9 +173,12 @@ def interactive_mode(model_package):
             else:
                 print("PREDICTION RESULTS")
                 print("="*80)
-                print(f"\nRikishi A (ID {rikishi_a_id}) win probability: {result['rikishi_a_win_probability']:.1%}")
-                print(f"Rikishi B (ID {rikishi_b_id}) win probability: {result['rikishi_b_win_probability']:.1%}")
-                print(f"\n🎯 Predicted winner: Rikishi {result['predicted_winner_id']}")
+                print(
+                    f"\nRikishi A (ID {rikishi_a_id}) win probability: {result['rikishi_a_win_probability']:.1%}")
+                print(
+                    f"Rikishi B (ID {rikishi_b_id}) win probability: {result['rikishi_b_win_probability']:.1%}")
+                print(
+                    f"\n🎯 Predicted winner: Rikishi {result['predicted_winner_id']}")
                 print(f"   Confidence: {result['confidence']:.1%}")
 
                 # Head-to-head record
@@ -175,9 +186,10 @@ def interactive_mode(model_package):
                     h2h = result['head_to_head']
                     h2h_total = h2h['rikishi_a_wins'] + h2h['rikishi_b_wins']
                     if h2h_total > 0:
-                        print(f"\n📊 Career Head-to-Head: {h2h['rikishi_a_wins']}-{h2h['rikishi_b_wins']} (Rikishi A leads)")
+                        print(
+                            f"\n📊 Career Head-to-Head: {h2h['rikishi_a_wins']}-{h2h['rikishi_b_wins']} (Rikishi A leads)")
                     else:
-                        print(f"\n📊 Career Head-to-Head: 0-0 (first meeting)")
+                        print("\n📊 Career Head-to-Head: 0-0 (first meeting)")
 
                 # Fantasy points
                 fp = result['fantasy_points']
@@ -185,8 +197,10 @@ def interactive_mode(model_package):
                     print("\n🎮 Fantasy League Points:")
                     rank_a_label = get_rank_label(fp['rikishi_a_rank'])
                     rank_b_label = get_rank_label(fp['rikishi_b_rank'])
-                    print(f"  Rikishi A ({rank_a_label}): {fp['rikishi_a_expected']:.2f} expected pts (max {fp['rikishi_a_potential']} if win)")
-                    print(f"  Rikishi B ({rank_b_label}): {fp['rikishi_b_expected']:.2f} expected pts (max {fp['rikishi_b_potential']} if win)")
+                    print(
+                        f"  Rikishi A ({rank_a_label}): {fp['rikishi_a_expected']:.2f} expected pts (max {fp['rikishi_a_potential']} if win)")
+                    print(
+                        f"  Rikishi B ({rank_b_label}): {fp['rikishi_b_expected']:.2f} expected pts (max {fp['rikishi_b_potential']} if win)")
 
                 print("\nKey factors:")
                 for key, value in result['key_features'].items():
@@ -209,6 +223,7 @@ def interactive_mode(model_package):
         except Exception as e:
             print(f"❌ Error: {e}")
             print()
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -270,9 +285,12 @@ CSV Format:
             print("="*80)
             print("PREDICTION RESULTS")
             print("="*80)
-            print(f"\nRikishi {args.rikishi1} win probability: {result['rikishi_a_win_probability']:.1%}")
-            print(f"Rikishi {args.rikishi2} win probability: {result['rikishi_b_win_probability']:.1%}")
-            print(f"\n🎯 Predicted winner: Rikishi {result['predicted_winner_id']}")
+            print(
+                f"\nRikishi {args.rikishi1} win probability: {result['rikishi_a_win_probability']:.1%}")
+            print(
+                f"Rikishi {args.rikishi2} win probability: {result['rikishi_b_win_probability']:.1%}")
+            print(
+                f"\n🎯 Predicted winner: Rikishi {result['predicted_winner_id']}")
             print(f"   Confidence: {result['confidence']:.1%}")
 
             # Head-to-head record
@@ -280,9 +298,10 @@ CSV Format:
                 h2h = result['head_to_head']
                 h2h_total = h2h['rikishi_a_wins'] + h2h['rikishi_b_wins']
                 if h2h_total > 0:
-                    print(f"\n📊 Career Head-to-Head: {h2h['rikishi_a_wins']}-{h2h['rikishi_b_wins']} (Rikishi {args.rikishi1} vs {args.rikishi2})")
+                    print(
+                        f"\n📊 Career Head-to-Head: {h2h['rikishi_a_wins']}-{h2h['rikishi_b_wins']} (Rikishi {args.rikishi1} vs {args.rikishi2})")
                 else:
-                    print(f"\n📊 Career Head-to-Head: 0-0 (first meeting)")
+                    print("\n📊 Career Head-to-Head: 0-0 (first meeting)")
 
             # Fantasy points
             fp = result['fantasy_points']
@@ -290,11 +309,14 @@ CSV Format:
                 print("\n🎮 Fantasy League Points:")
                 rank_a_label = get_rank_label(fp['rikishi_a_rank'])
                 rank_b_label = get_rank_label(fp['rikishi_b_rank'])
-                print(f"  Rikishi {args.rikishi1} ({rank_a_label}): {fp['rikishi_a_expected']:.2f} expected pts (max {fp['rikishi_a_potential']} if win)")
-                print(f"  Rikishi {args.rikishi2} ({rank_b_label}): {fp['rikishi_b_expected']:.2f} expected pts (max {fp['rikishi_b_potential']} if win)")
+                print(
+                    f"  Rikishi {args.rikishi1} ({rank_a_label}): {fp['rikishi_a_expected']:.2f} expected pts (max {fp['rikishi_a_potential']} if win)")
+                print(
+                    f"  Rikishi {args.rikishi2} ({rank_b_label}): {fp['rikishi_b_expected']:.2f} expected pts (max {fp['rikishi_b_potential']} if win)")
             print("="*80)
     else:
         parser.print_help()
+
 
 if __name__ == '__main__':
     main()

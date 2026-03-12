@@ -1,11 +1,9 @@
 """
 Sumo Bout Prediction Model with Iterative Improvement
 """
-import pymysql
 import pandas as pd
-import numpy as np
 from datetime import datetime
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional
 from dataclasses import dataclass
 import joblib
 from tqdm import tqdm
@@ -15,14 +13,14 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_auc_score
 
-from src.core.db_connector import get_connection, get_connection_params
+from src.core.db_connector import get_connection
 
 # Try importing XGBoost (requires libomp on Mac)
 try:
     import xgboost as xgb
     XGBOOST_AVAILABLE = True
-except Exception as e:
-    print(f"Warning: XGBoost not available - install libomp: brew install libomp")
+except Exception:
+    print("Warning: XGBoost not available - install libomp: brew install libomp")
     XGBOOST_AVAILABLE = False
     xgb = None
 
@@ -30,8 +28,8 @@ except Exception as e:
 try:
     import lightgbm as lgb
     LIGHTGBM_AVAILABLE = True
-except Exception as e:
-    print(f"Warning: LightGBM not available - install libomp: brew install libomp")
+except Exception:
+    print("Warning: LightGBM not available - install libomp: brew install libomp")
     LIGHTGBM_AVAILABLE = False
     lgb = None
 
@@ -76,7 +74,8 @@ class EloRatingSystem:
         self.k_factor = k_factor
         self.initial_rating = initial_rating
         self.ratings: Dict[int, float] = {}
-        self.rating_history: List[Tuple[int, int, int, float, float]] = []  # basho, day, rikishi_id, rating
+        # basho, day, rikishi_id, rating
+        self.rating_history: List[Tuple[int, int, int, float, float]] = []
 
     def get_rating(self, rikishi_id: int) -> float:
         """Get current rating for a wrestler"""
@@ -96,12 +95,15 @@ class EloRatingSystem:
         expected_winner = self.expected_score(winner_rating, loser_rating)
         expected_loser = self.expected_score(loser_rating, winner_rating)
 
-        new_winner_rating = winner_rating + self.k_factor * (1 - expected_winner)
+        new_winner_rating = winner_rating + \
+            self.k_factor * (1 - expected_winner)
         new_loser_rating = loser_rating + self.k_factor * (0 - expected_loser)
 
         # Store history before updating
-        self.rating_history.append((basho_id, day, winner_id, winner_rating, loser_rating))
-        self.rating_history.append((basho_id, day, loser_id, loser_rating, winner_rating))
+        self.rating_history.append(
+            (basho_id, day, winner_id, winner_rating, loser_rating))
+        self.rating_history.append(
+            (basho_id, day, loser_id, loser_rating, winner_rating))
 
         self.ratings[winner_id] = new_winner_rating
         self.ratings[loser_id] = new_loser_rating
@@ -170,7 +172,7 @@ class SumoDataLoader:
         ORDER BY b.basho_id, b.day, b.id
         """
 
-        df = pd.read_sql(query, conn)
+        df = pd.read_sql(query, con=conn)  # type: ignore
         conn.close()
 
         print(f"Loaded {len(df)} valid bouts")
@@ -190,7 +192,8 @@ class FeatureEngineer:
         # Track statistics
         self.rikishi_stats: Dict[int, Dict] = {}
         self.head_to_head: Dict[Tuple[int, int], Dict] = {}
-        self.basho_records: Dict[Tuple[int, int], Dict] = {}  # (rikishi_id, basho_id) -> stats
+        # (rikishi_id, basho_id) -> stats
+        self.basho_records: Dict[Tuple[int, int], Dict] = {}
 
         # Database connection for live queries (optional, for prediction time)
         self.db_config = None
@@ -255,15 +258,18 @@ class FeatureEngineer:
             WHERE (winning_rikishi_id = %s AND losing_rikishi_id = %s)
                OR (winning_rikishi_id = %s AND losing_rikishi_id = %s)
         """
-        cursor.execute(query, (rikishi_a, rikishi_b, rikishi_a, rikishi_b, rikishi_b, rikishi_a))
+        cursor.execute(query, (rikishi_a, rikishi_b, rikishi_a,
+                       rikishi_b, rikishi_b, rikishi_a))
         result = cursor.fetchone()
 
         cursor.close()
         conn.close()
 
-        return (int(result[0]), int(result[1]))
+        if result is not None:
+            return (int(result[0]), int(result[1]))
+        return (0, 0)
 
-    def _get_live_recent_bouts(self, rikishi_id: int, basho_id: int, limit: int = None) -> List[int]:
+    def _get_live_recent_bouts(self, rikishi_id: int, basho_id: int, limit: Optional[int] = None) -> List[int]:
         """Query fresh recent bout results from database"""
         if not self.db_config:
             # Fall back to cached data
@@ -293,7 +299,8 @@ class FeatureEngineer:
             ORDER BY basho_id DESC, day DESC
             LIMIT %s
         """
-        cursor.execute(query, (rikishi_id, rikishi_id, rikishi_id, basho_id, limit))
+        cursor.execute(query, (rikishi_id, rikishi_id,
+                       rikishi_id, basho_id, limit))
         results = cursor.fetchall()
 
         cursor.close()
@@ -327,13 +334,16 @@ class FeatureEngineer:
                   WHERE name IN ('hansoku', 'default', 'fusen')
               )
         """
-        cursor.execute(query, (rikishi_id, rikishi_id, rikishi_id, rikishi_id, basho_id, day))
+        cursor.execute(query, (rikishi_id, rikishi_id,
+                       rikishi_id, rikishi_id, basho_id, day))
         result = cursor.fetchone()
 
         cursor.close()
         conn.close()
 
-        return (int(result[0]), int(result[1]))
+        if result is not None:
+            return (int(result[0]), int(result[1]))
+        return (0, 0)
 
     def extract_features_for_bout(self, bout_row: pd.Series) -> Dict:
         """Extract features for a single bout before it happens"""
@@ -352,23 +362,28 @@ class FeatureEngineer:
         # Elo ratings (before the bout)
         features['rikishi_a_elo'] = self.elo_system.get_rating(rikishi_a)
         features['rikishi_b_elo'] = self.elo_system.get_rating(rikishi_b)
-        features['elo_diff'] = features['rikishi_a_elo'] - features['rikishi_b_elo']
+        features['elo_diff'] = features['rikishi_a_elo'] - \
+            features['rikishi_b_elo']
 
         # Rank features
         features['rikishi_a_rank'] = bout_row['winner_rank']
         features['rikishi_b_rank'] = bout_row['loser_rank']
-        features['rank_diff'] = bout_row['winner_rank'] - bout_row['loser_rank']
+        features['rank_diff'] = bout_row['winner_rank'] - \
+            bout_row['loser_rank']
 
         # Experience
         features['rikishi_a_total_bouts'] = self.rikishi_stats[rikishi_a]['total_bouts']
         features['rikishi_b_total_bouts'] = self.rikishi_stats[rikishi_b]['total_bouts']
-        features['experience_diff'] = features['rikishi_a_total_bouts'] - features['rikishi_b_total_bouts']
+        features['experience_diff'] = features['rikishi_a_total_bouts'] - \
+            features['rikishi_b_total_bouts']
 
         # Overall win rate
         a_stats = self.rikishi_stats[rikishi_a]
         b_stats = self.rikishi_stats[rikishi_b]
-        features['rikishi_a_win_rate'] = a_stats['total_wins'] / a_stats['total_bouts'] if a_stats['total_bouts'] > 0 else 0.5
-        features['rikishi_b_win_rate'] = b_stats['total_wins'] / b_stats['total_bouts'] if b_stats['total_bouts'] > 0 else 0.5
+        features['rikishi_a_win_rate'] = a_stats['total_wins'] / \
+            a_stats['total_bouts'] if a_stats['total_bouts'] > 0 else 0.5
+        features['rikishi_b_win_rate'] = b_stats['total_wins'] / \
+            b_stats['total_bouts'] if b_stats['total_bouts'] > 0 else 0.5
 
         # Recent form (last N bouts) - use live data if available
         if self.db_config:
@@ -377,13 +392,17 @@ class FeatureEngineer:
         else:
             recent_a = a_stats['recent_bouts'][-self.config.recent_bouts_window:]
             recent_b = b_stats['recent_bouts'][-self.config.recent_bouts_window:]
-        features['rikishi_a_recent_win_rate'] = sum(recent_a) / len(recent_a) if recent_a else 0.5
-        features['rikishi_b_recent_win_rate'] = sum(recent_b) / len(recent_b) if recent_b else 0.5
+        features['rikishi_a_recent_win_rate'] = sum(
+            recent_a) / len(recent_a) if recent_a else 0.5
+        features['rikishi_b_recent_win_rate'] = sum(
+            recent_b) / len(recent_b) if recent_b else 0.5
 
         # Current basho record with Laplace smoothing - use live data if available
         if self.db_config:
-            basho_a_wins, basho_a_losses = self._get_live_basho_record(rikishi_a, basho_id, day)
-            basho_b_wins, basho_b_losses = self._get_live_basho_record(rikishi_b, basho_id, day)
+            basho_a_wins, basho_a_losses = self._get_live_basho_record(
+                rikishi_a, basho_id, day)
+            basho_b_wins, basho_b_losses = self._get_live_basho_record(
+                rikishi_b, basho_id, day)
         else:
             basho_a = self.basho_records[(rikishi_a, basho_id)]
             basho_b = self.basho_records[(rikishi_b, basho_id)]
@@ -391,19 +410,24 @@ class FeatureEngineer:
             basho_b_wins, basho_b_losses = basho_b['wins'], basho_b['losses']
 
         # Apply Laplace smoothing (+1 win, +1 loss pseudo-counts)
-        features['rikishi_a_basho_win_rate'] = (basho_a_wins + 1) / (basho_a_wins + basho_a_losses + 2)
-        features['rikishi_b_basho_win_rate'] = (basho_b_wins + 1) / (basho_b_wins + basho_b_losses + 2)
+        features['rikishi_a_basho_win_rate'] = (
+            basho_a_wins + 1) / (basho_a_wins + basho_a_losses + 2)
+        features['rikishi_b_basho_win_rate'] = (
+            basho_b_wins + 1) / (basho_b_wins + basho_b_losses + 2)
 
         # Head-to-head - use live data if available
         if self.config.include_head_to_head:
             if self.db_config:
-                a_h2h_wins, b_h2h_wins = self._get_live_head_to_head(rikishi_a, rikishi_b)
+                a_h2h_wins, b_h2h_wins = self._get_live_head_to_head(
+                    rikishi_a, rikishi_b)
             else:
-                a_h2h_wins, b_h2h_wins = self._get_head_to_head(rikishi_a, rikishi_b)
+                a_h2h_wins, b_h2h_wins = self._get_head_to_head(
+                    rikishi_a, rikishi_b)
             features['h2h_a_wins'] = a_h2h_wins
             features['h2h_b_wins'] = b_h2h_wins
             h2h_total = a_h2h_wins + b_h2h_wins
-            features['h2h_a_win_rate'] = a_h2h_wins / h2h_total if h2h_total > 0 else 0.5
+            features['h2h_a_win_rate'] = a_h2h_wins / \
+                h2h_total if h2h_total > 0 else 0.5
 
         # Contextual
         features['day_of_basho'] = day
@@ -412,8 +436,10 @@ class FeatureEngineer:
         if self.config.include_age and pd.notna(bout_row['winner_dob']) and pd.notna(bout_row['loser_dob']):
             # Approximate age at time of bout (using basho_id as rough date proxy)
             # Each basho is roughly 2 months, starting from some base year
-            features['rikishi_a_age_years'] = (datetime.now() - pd.to_datetime(bout_row['winner_dob'])).days / 365.25
-            features['rikishi_b_age_years'] = (datetime.now() - pd.to_datetime(bout_row['loser_dob'])).days / 365.25
+            features['rikishi_a_age_years'] = (
+                datetime.now() - pd.to_datetime(bout_row['winner_dob'])).days / 365.25
+            features['rikishi_b_age_years'] = (
+                datetime.now() - pd.to_datetime(bout_row['loser_dob'])).days / 365.25
 
         return features
 
@@ -485,7 +511,8 @@ class FeatureEngineer:
             labels.append(0)
 
             # NOW update statistics for next bout
-            self.update_after_bout(bout, bout['winning_rikishi_id'], bout['losing_rikishi_id'])
+            self.update_after_bout(
+                bout, bout['winning_rikishi_id'], bout['losing_rikishi_id'])
 
         X = pd.DataFrame(features_list)
         y = pd.Series(labels, name='winner')
@@ -497,7 +524,7 @@ class FeatureEngineer:
         # Check for NaN values
         nan_counts = X.isna().sum()
         if nan_counts.any():
-            print(f"\nNaN values found:")
+            print("\nNaN values found:")
             print(nan_counts[nan_counts > 0])
             print("\nFilling NaN values...")
             # Fill NaN values appropriately
@@ -510,7 +537,8 @@ class FeatureEngineer:
                     X[col] = X[col].fillna(0)
 
         print(f"\nFinal dataset shape: {X.shape}")
-        print(f"NaN check after filling: {X.isna().sum().sum()} NaN values remain")
+        print(
+            f"NaN check after filling: {X.isna().sum().sum()} NaN values remain")
 
         return X, y
 
@@ -545,7 +573,7 @@ class SumoPredictor:
         # XGBoost
         if XGBOOST_AVAILABLE:
             print("\n2. Training XGBoost...")
-            self.models['xgboost'] = xgb.XGBClassifier(
+            self.models['xgboost'] = xgb.XGBClassifier(  # type: ignore
                 max_depth=self.config.xgb_max_depth,
                 learning_rate=self.config.xgb_learning_rate,
                 n_estimators=self.config.xgb_n_estimators,
@@ -564,7 +592,7 @@ class SumoPredictor:
         # LightGBM
         if LIGHTGBM_AVAILABLE:
             print("\n3. Training LightGBM...")
-            self.models['lightgbm'] = lgb.LGBMClassifier(
+            self.models['lightgbm'] = lgb.LGBMClassifier(  # type: ignore
                 max_depth=self.config.lgb_max_depth,
                 learning_rate=self.config.lgb_learning_rate,
                 n_estimators=self.config.lgb_n_estimators,
@@ -615,7 +643,8 @@ class SumoPredictor:
             print(f"ROC-AUC:  {roc_auc:.4f}")
 
             print("\nClassification Report:")
-            print(classification_report(y_test, y_pred, target_names=['Loser', 'Winner']))
+            print(classification_report(y_test, y_pred,
+                  target_names=['Loser', 'Winner']))
 
             print("\nConfusion Matrix:")
             cm = confusion_matrix(y_test, y_pred)
@@ -645,7 +674,8 @@ class SumoPredictor:
         errors['true_label'] = y_test[y_test != y_pred]
         errors['predicted_label'] = y_pred[y_test != y_pred]
 
-        print(f"\nTotal errors: {len(errors)} out of {len(X_test)} ({len(errors)/len(X_test)*100:.2f}%)")
+        print(
+            f"\nTotal errors: {len(errors)} out of {len(X_test)} ({len(errors)/len(X_test)*100:.2f}%)")
 
         if len(errors) > 0:
             print("\nError analysis by feature ranges:")

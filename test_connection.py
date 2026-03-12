@@ -9,7 +9,7 @@ import sys
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
-from src.core.db_connector import get_connection, close_connector
+from src.core.db_connector import get_connection, close_connector  # noqa: E402
 
 def test_connection():
     """Test database connection"""

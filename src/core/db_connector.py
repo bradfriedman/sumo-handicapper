@@ -3,7 +3,7 @@ Database connection utilities for Cloud SQL
 Supports both local proxy connection and Cloud SQL Python Connector
 """
 from google.cloud.sql.connector import Connector
-from typing import Optional, Callable, Any
+from typing import Optional, Any
 import pymysql
 import tempfile
 import json
@@ -248,6 +248,13 @@ def get_connection() -> pymysql.Connection:
         os.getenv('DB_PASSWORD')
     db_name = _get_streamlit_secret('DB_NAME') or \
         os.getenv('DB_NAME', DEFAULT_DB_NAME)
+
+    if not db_password:
+        raise ValueError(
+            "Database password not found. Please configure either:\n"
+            "1. Streamlit secrets with [DB_PASSWORD] field, or\n"
+            "2. DB_PASSWORD environment variable"
+        )
 
     if instance_connection_name:
         # Use Cloud SQL Python Connector (production/Streamlit Cloud)

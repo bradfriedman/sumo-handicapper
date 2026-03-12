@@ -7,7 +7,7 @@ for XGBoost and LightGBM on NVIDIA GPUs (especially RTX 3090).
 import platform
 import subprocess
 import warnings
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 
 class GPUOptimizer:
@@ -28,7 +28,8 @@ class GPUOptimizer:
         try:
             if platform.system() == "Windows":
                 result = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=name,memory.total,compute_cap", "--format=csv,noheader"],
+                    ["nvidia-smi", "--query-gpu=name,memory.total,compute_cap",
+                        "--format=csv,noheader"],
                     capture_output=True,
                     text=True,
                     timeout=5
@@ -38,16 +39,19 @@ class GPUOptimizer:
                     if output:
                         parts = output.split(',')
                         self.gpu_name = parts[0].strip()
-                        self.gpu_memory_mb = int(float(parts[1].strip().split()[0]))
+                        self.gpu_memory_mb = int(
+                            float(parts[1].strip().split()[0]))
                         self.compute_capability = parts[2].strip()
                         self.gpu_available = True
                         print(f"[OK] GPU Detected: {self.gpu_name}")
                         print(f"  Memory: {self.gpu_memory_mb} MB")
-                        print(f"  Compute Capability: {self.compute_capability}")
+                        print(
+                            f"  Compute Capability: {self.compute_capability}")
             else:
                 # Linux/Mac
                 result = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+                    ["nvidia-smi", "--query-gpu=name,memory.total",
+                        "--format=csv,noheader"],
                     capture_output=True,
                     text=True,
                     timeout=5
@@ -57,7 +61,8 @@ class GPUOptimizer:
                     if output:
                         parts = output.split(',')
                         self.gpu_name = parts[0].strip()
-                        self.gpu_memory_mb = int(float(parts[1].strip().split()[0]))
+                        self.gpu_memory_mb = int(
+                            float(parts[1].strip().split()[0]))
                         self.gpu_available = True
                         print(f"[OK] GPU Detected: {self.gpu_name}")
                         print(f"  Memory: {self.gpu_memory_mb} MB")
@@ -73,12 +78,13 @@ class GPUOptimizer:
                 dtrain = xgb.DMatrix([[1, 2], [3, 4]], label=[0, 1])
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    bst = xgb.train(test_params, dtrain, num_boost_round=1)
+                    _bst = xgb.train(test_params, dtrain, num_boost_round=1)
                 self.cuda_available = True
                 print("[OK] XGBoost GPU support: Available")
             except Exception:
                 print("[WARN] XGBoost GPU support: Not available (CPU build)")
-                print("  To enable: pip install xgboost[gpu] or build from source")
+                print(
+                    "  To enable: pip install xgboost[gpu] or build from source")
 
     def get_xgboost_params(self, base_params: Optional[Dict] = None) -> Dict:
         """
@@ -95,12 +101,14 @@ class GPUOptimizer:
         if self.cuda_available:
             # GPU-specific optimizations
             params['device'] = 'cuda'
-            params['tree_method'] = 'hist'  # GPU-accelerated histogram algorithm
+            # GPU-accelerated histogram algorithm
+            params['tree_method'] = 'hist'
 
             # Optimize based on GPU memory
             # High-end GPUs (>20GB VRAM) can handle more bins and deeper trees
             if self.gpu_memory_mb and self.gpu_memory_mb > 20000:
-                params['max_bin'] = 512  # More bins for better accuracy with high-end GPU
+                # More bins for better accuracy with high-end GPU
+                params['max_bin'] = 512
                 params['grow_policy'] = 'depthwise'  # Better for GPU
                 print("\n[OK] High-end GPU Optimizations Applied:")
                 print("  - GPU acceleration enabled (device=cuda)")
@@ -116,7 +124,7 @@ class GPUOptimizer:
             else:
                 params['max_bin'] = 256  # Entry-level GPUs
 
-            print(f"\n[OK] XGBoost GPU Parameters:")
+            print("\n[OK] XGBoost GPU Parameters:")
             for key in ['device', 'tree_method', 'max_bin', 'grow_policy']:
                 if key in params:
                     print(f"  {key}: {params[key]}")
@@ -125,8 +133,8 @@ class GPUOptimizer:
             params['tree_method'] = 'hist'  # Still faster on CPU
             params['n_jobs'] = -1  # Use all CPU cores
             print("\n[INFO] XGBoost CPU Parameters (GPU not available):")
-            print(f"  tree_method: hist")
-            print(f"  n_jobs: -1 (all cores)")
+            print("  tree_method: hist")
+            print("  n_jobs: -1 (all cores)")
 
         return params
 
@@ -155,7 +163,8 @@ class GPUOptimizer:
 
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        test_params = {'device': 'gpu', 'gpu_platform_id': 0, 'gpu_device_id': 0, 'verbose': -1}
+                        test_params = {
+                            'device': 'gpu', 'gpu_platform_id': 0, 'gpu_device_id': 0, 'verbose': -1}
                         lgb.train(test_params, train_data, num_boost_round=1)
 
                     # GPU is available
@@ -165,7 +174,8 @@ class GPUOptimizer:
 
                     # LightGBM GPU optimizations
                     # Note: LightGBM GPU has max_bin limit of 255
-                    params['gpu_use_dp'] = False  # Use single precision for speed
+                    # Use single precision for speed
+                    params['gpu_use_dp'] = False
                     params['max_bin'] = 255  # Max allowed for GPU
                     if self.gpu_memory_mb and self.gpu_memory_mb > 20000:
                         print("\n[OK] LightGBM GPU Parameters (High-end GPU):")
@@ -180,10 +190,11 @@ class GPUOptimizer:
                     # GPU support not available
                     params['device'] = 'cpu'
                     params['n_jobs'] = -1
-                    print(f"\n[WARN] LightGBM GPU support: Not available")
+                    print("\n[WARN] LightGBM GPU support: Not available")
                     print(f"  Reason: {str(e)}")
-                    print("  To enable: Reinstall with GPU support (pip install lightgbm --install-option=--gpu)")
-                    print(f"  Using CPU with all cores (n_jobs=-1)")
+                    print(
+                        "  To enable: Reinstall with GPU support (pip install lightgbm --install-option=--gpu)")
+                    print("  Using CPU with all cores (n_jobs=-1)")
             except ImportError:
                 print("\n[WARN] LightGBM not installed")
         else:
@@ -191,12 +202,12 @@ class GPUOptimizer:
             params['device'] = 'cpu'
             params['n_jobs'] = -1
             print("\n[INFO] LightGBM CPU Parameters (GPU not detected):")
-            print(f"  device: cpu")
-            print(f"  n_jobs: -1 (all cores)")
+            print("  device: cpu")
+            print("  n_jobs: -1 (all cores)")
 
         return params
 
-    def get_training_recommendations(self) -> Dict[str, any]:
+    def get_training_recommendations(self) -> Dict[str, Any]:
         """
         Get overall training recommendations based on hardware
 
@@ -264,7 +275,8 @@ class GPUOptimizer:
             if self.compute_capability:
                 print(f"  Compute Capability: {self.compute_capability}")
 
-            print(f"\n[OK] CUDA for XGBoost: {'Available' if self.cuda_available else 'Not Available'}")
+            print(
+                f"\n[OK] CUDA for XGBoost: {'Available' if self.cuda_available else 'Not Available'}")
 
             recommendations = self.get_training_recommendations()
             if recommendations['notes']:

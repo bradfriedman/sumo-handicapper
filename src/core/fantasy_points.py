@@ -135,14 +135,14 @@ if __name__ == "__main__":
     # Test case 1: M13 defeats M5 (example from user)
     print("\nTest 1: M13 defeats M5")
     points = calculate_fantasy_points(winner_rank=13, loser_rank=5)
-    print(f"  Expected: 4 points (2 base + 2 upset)")
+    print("  Expected: 4 points (2 base + 2 upset)")
     print(f"  Actual:   {points} points")
     assert points == 4, f"Test 1 failed: expected 4, got {points}"
 
     # Test case 2: Sekiwake defeats Komusubi (example from user)
     print("\nTest 2: Sekiwake defeats Komusubi")
     points = calculate_fantasy_points(winner_rank=-1, loser_rank=0)
-    print(f"  Expected: 2 points (2 base + 0 upset)")
+    print("  Expected: 2 points (2 base + 0 upset)")
     print(f"  Actual:   {points} points")
     assert points == 2, f"Test 2 failed: expected 2, got {points}"
 

@@ -16,7 +16,7 @@ def test_configuration(config: ModelConfig, iteration: int):
     print(f"\n{'='*80}")
     print(f"ITERATION {iteration}")
     print(f"{'='*80}")
-    print(f"Configuration:")
+    print("Configuration:")
     print(f"  Elo K-factor: {config.elo_k_factor}")
     print(f"  Elo Initial Rating: {config.elo_initial_rating}")
     print(f"  Recent Bouts Window: {config.recent_bouts_window}")
@@ -230,12 +230,12 @@ def main():
 
     # Best model
     print(f"\n{'='*80}")
-    print(f"BEST MODEL")
+    print("BEST MODEL")
     print(f"{'='*80}")
     print(f"Iteration: {best_iteration}")
     print(f"Configuration: {best_config['name']}")
     print(f"Accuracy: {best_accuracy:.4f}")
-    print(f"\nConfig details:")
+    print("\nConfig details:")
     for key, value in best_config.items():
         if key != 'name':
             print(f"  {key}: {value}")
