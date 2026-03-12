@@ -48,6 +48,7 @@ model_retrain.log
 quick_*.txt
 
 # Project-specific: Runtime state
+.streamlit/
 .streamlit_preferences.json
 .model_training_state.json
 
