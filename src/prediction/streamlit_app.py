@@ -627,7 +627,7 @@ def display_prediction_results(result, rikishi_a_name, rikishi_b_name):
             result['rikishi_a_win_probability'],
             result['rikishi_b_win_probability']
         ),
-        use_container_width=True
+        width='stretch'
     )
 
     # Three column layout for key metrics
@@ -678,7 +678,7 @@ def display_prediction_results(result, rikishi_a_name, rikishi_b_name):
                 result['individual_predictions'],
                 rikishi_a_name
             ),
-            use_container_width=True
+            width='stretch'
         )
 
         col1, col2, col3 = st.columns(3)
@@ -807,7 +807,7 @@ def main():
         st.divider()
 
         # Predict button
-        if st.button("🔮 Predict Bout Outcome", type="primary", use_container_width=True):
+        if st.button("🔮 Predict Bout Outcome", type="primary", width='stretch'):
             if rikishi_a_id and rikishi_b_id:
                 with st.spinner("Making prediction..."):
                     result = predict_bout(
@@ -907,7 +907,7 @@ def main():
         st.divider()
 
         # Predict button
-        if st.button("🔮 Analyze Roster", type="primary", use_container_width=True):
+        if st.button("🔮 Analyze Roster", type="primary", width='stretch'):
             if len(bouts_data) < 6:
                 st.warning(f"⚠️ Please select all 6 bouts. Currently have {len(bouts_data)} complete bout(s).")
             else:
@@ -1072,7 +1072,7 @@ def main():
             st.divider()
 
             # Analyze button
-            if st.button("🔮 Analyze Auto-Lineup", type="primary", use_container_width=True):
+            if st.button("🔮 Analyze Auto-Lineup", type="primary", width='stretch'):
                 with st.spinner("Analyzing your lineup..."):
                     # Get squadron roster
                     roster = get_squadron_roster(basho_id, selected_squadron['oyakata_id'])
@@ -1281,7 +1281,7 @@ def main():
         # Check for new data
         st.subheader("🔍 Check for New Data")
 
-        if st.button("🔎 Check Database", use_container_width=True):
+        if st.button("🔎 Check Database", width='stretch'):
             with st.spinner("Querying database for latest bout..."):
                 latest_basho, latest_day = get_latest_bout_in_db()
 
@@ -1316,7 +1316,7 @@ def main():
         else:
             st.warning("⚠️ Will train on recent data only (50 bashos). Use this for testing only.")
 
-        if st.button("🔥 Update Model with New Data", type="primary", use_container_width=True):
+        if st.button("🔥 Update Model with New Data", type="primary", width='stretch'):
             # Create progress indicators
             progress_bar = st.progress(0)
             status_text = st.empty()
