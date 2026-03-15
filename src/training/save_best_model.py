@@ -256,7 +256,7 @@ def train_and_save_production_model(
         'models': {
             'random_forest': rf_model,
             'lightgbm': lgb_model,
-            'xgboost': {'_type': 'xgboost_booster', 'path': xgb_booster_path},
+            'xgboost': {'_type': 'xgboost_booster', 'path': 'models/xgboost_booster.json'},
         },
         'ensemble_weights': ensemble_weights,
         'feature_names': list(X.columns),

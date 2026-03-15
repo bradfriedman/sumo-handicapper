@@ -70,7 +70,8 @@ def load_model():
         # Handle XGBoost model: if it's stored as a reference, load from native format
         xgb_model = model_package['models']['xgboost']
         if isinstance(xgb_model, dict) and xgb_model.get('_type') == 'xgboost_booster':
-            booster_path = xgb_model['path']
+            # Reconstruct absolute path relative to project root
+            booster_path = os.path.join(project_root, xgb_model['path'])
             booster = xgb.Booster(model_file=booster_path)
             xgb_classifier = xgb.XGBClassifier()
             xgb_classifier._Booster = booster
