@@ -6,6 +6,7 @@ import joblib
 import pandas as pd
 import pymysql
 import os
+import traceback
 from typing import Any, NotRequired, TypedDict
 from src.core.fantasy_points import calculate_expected_points
 from src.core.db_connector import get_connection
@@ -56,12 +57,23 @@ def get_db_connection():
 
 def load_model():
     """Load the trained model package"""
+    import xgboost as xgb
+
     # Get the project root directory (2 levels up from this file)
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     model_path = os.path.join(project_root, 'models', 'sumo_predictor_production.joblib')
 
     try:
         model_package = joblib.load(model_path)
+
+        # Handle XGBoost model: if it's stored as a reference, load from native format
+        xgb_model = model_package['models']['xgboost']
+        if isinstance(xgb_model, dict) and xgb_model.get('_type') == 'xgboost_booster':
+            booster_path = xgb_model['path']
+            booster = xgb.Booster(model_file=booster_path)
+            xgb_classifier = xgb.XGBClassifier()
+            xgb_classifier._Booster = booster
+            model_package['models']['xgboost'] = xgb_classifier
 
         # Enable live data queries for fresh stats at prediction time
         model_package['feature_engineer'].enable_live_data(DB_CONFIG)
@@ -204,9 +216,12 @@ def predict_bout(
     try:
         features = engineer.extract_features_for_bout(bout_series)
     except Exception as e:
+        error_details = traceback.format_exc()
+        print(f"Feature extraction error:\n{error_details}")
         return {
             'error': f"Failed to extract features: {str(e)}",
-            'suggestion': "Make sure both rikishi have historical data in the database"
+            'suggestion': "Make sure both rikishi have historical data in the database",
+            'debug_details': error_details
         }
 
     # Convert to DataFrame (single row)

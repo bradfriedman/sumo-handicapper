@@ -5,6 +5,8 @@ Beautiful, reactive interface for predicting sumo wrestling outcomes
 import sys
 import os
 import json
+from typing import cast
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add project root to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -37,7 +39,7 @@ DEFAULT_BASHO_ID = 630
 DEFAULT_DAY = 10
 
 def load_preferences():
-    """Load basho ID and day preferences from file"""
+    """Load basho ID, day, and rikishi A selections from file"""
     try:
         if os.path.exists(PREFERENCES_FILE):
             with open(PREFERENCES_FILE, 'r') as f:
@@ -46,20 +48,23 @@ def load_preferences():
                 day = int(data.get('day', DEFAULT_DAY))
                 # Validate ranges
                 if 491 <= basho_id <= 700 and 1 <= day <= 15:
-                    return basho_id, day
+                    rikishi_a_selections = data.get('rikishi_a_selections', [{} for _ in range(6)])
+                    return basho_id, day, rikishi_a_selections
     except (FileNotFoundError, json.JSONDecodeError, ValueError, KeyError, TypeError):
         pass
 
     # Return defaults if file doesn't exist or is invalid
-    return DEFAULT_BASHO_ID, DEFAULT_DAY
+    return DEFAULT_BASHO_ID, DEFAULT_DAY, [{} for _ in range(6)]
 
-def save_preferences(basho_id, day):
-    """Save basho ID and day preferences to file"""
+def save_preferences(basho_id, day, rikishi_a_selections=None):
+    """Save basho ID, day, and optional rikishi A selections to file"""
     try:
         data = {
             'basho_id': basho_id,
             'day': day
         }
+        if rikishi_a_selections:
+            data['rikishi_a_selections'] = rikishi_a_selections
         with open(PREFERENCES_FILE, 'w') as f:
             json.dump(data, f, indent=2)
     except (IOError, OSError):
@@ -491,8 +496,8 @@ def get_best_name_match(rikishi, search_input):
 
     return min_distance
 
-def display_rikishi_selector(label, key_prefix, basho_id):
-    """Display rikishi selector with name search"""
+def display_rikishi_selector(label, key_prefix, basho_id, default_rikishi_id=None):
+    """Display rikishi selector with name search and optional default selection"""
     name_input = st.text_input(
         f"Enter {label} name (partial match works)",
         key=f"{key_prefix}_name_input",
@@ -504,6 +509,7 @@ def display_rikishi_selector(label, key_prefix, basho_id):
 
         if not results:
             st.warning(f"No rikishi found matching '{name_input}'")
+            st.session_state[f"{key_prefix}_rikishi_id"] = None
             return None, None, None, None
 
         # Sort results by edit distance (closest match first)
@@ -521,9 +527,18 @@ def display_rikishi_selector(label, key_prefix, basho_id):
             rank_part = f" - {get_rank_label(r['rank'])}" if r.get('rank') else " - Not in basho"
             options.append(f"{display_name}{real_name_part}{rank_part}")
 
+        # Find the default index if a default_rikishi_id is provided
+        default_index = 0
+        if default_rikishi_id is not None:
+            for i, r in enumerate(results):
+                if r['id'] == default_rikishi_id:
+                    default_index = i
+                    break
+
         selected_idx = st.selectbox(
             f"Select {label}",
             range(len(options)),
+            index=default_index,
             format_func=lambda i: options[i],
             key=f"{key_prefix}_select"
         )
@@ -531,8 +546,12 @@ def display_rikishi_selector(label, key_prefix, basho_id):
         selected = results[selected_idx]
         display_name = selected.get('ring_name') or selected['real_name']
 
+        # Store rikishi ID in session state for persistence
+        st.session_state[f"{key_prefix}_rikishi_id"] = selected['id']
+
         return selected['id'], selected.get('rank'), selected.get('dob'), display_name
 
+    st.session_state[f"{key_prefix}_rikishi_id"] = None
     return None, None, None, None
 
 def create_probability_chart(rikishi_a_name, rikishi_b_name, prob_a, prob_b):
@@ -755,19 +774,20 @@ def main():
     mode = st.sidebar.radio(
         "Choose prediction mode:",
         [
+            "Full Fantasy Roster",
             "Single Bout Prediction",
-            "Fantasy Roster (6 Bouts)",
             "Fantasy Auto-Lineup",
             "Batch Predictions (CSV)",
             "Update Model"
-        ]
+        ],
+        index=0
     )
 
     if mode == "Single Bout Prediction":
         st.header("Single Bout Prediction")
 
         # Load saved preferences for defaults
-        default_basho_id, default_day = load_preferences()
+        default_basho_id, default_day, _ = load_preferences()
 
         # Bout details
         col1, col2 = st.columns(2)
@@ -837,7 +857,7 @@ def main():
             else:
                 st.warning("⚠️ Please select both rikishi to make a prediction")
 
-    elif mode == "Fantasy Roster (6 Bouts)":
+    elif mode == "Full Fantasy Roster":
         st.header("🎮 Fantasy Roster Optimizer")
         st.info("""
         **Fantasy League Mode**: Enter your 6 rostered rikishi and their opponents for the day.
@@ -845,7 +865,15 @@ def main():
         """)
 
         # Load saved preferences for defaults
-        default_basho_id, default_day = load_preferences()
+        default_basho_id, default_day, default_rikishi_a_selections = load_preferences()
+
+        # Pre-populate session state with saved rikishi A text inputs
+        for i in range(6):
+            if i < len(default_rikishi_a_selections) and default_rikishi_a_selections[i]:
+                selection = default_rikishi_a_selections[i]
+                text_input = selection.get('text_input', '')
+                if text_input and f"fantasy_a_{i}_name_input" not in st.session_state:
+                    st.session_state[f"fantasy_a_{i}_name_input"] = text_input
 
         # Bout details (same for all 6 bouts)
         col1, col2 = st.columns(2)
@@ -879,10 +907,15 @@ def main():
             st.subheader(f"🥋 Bout {i+1}")
             col1, col2 = st.columns(2)
 
+            # Get default rikishi ID from saved preferences
+            default_rikishi_a_id = None
+            if i < len(default_rikishi_a_selections) and default_rikishi_a_selections[i]:
+                default_rikishi_a_id = default_rikishi_a_selections[i].get('rikishi_id')
+
             with col1:
                 st.write("**Your Rikishi (A)**")
                 rikishi_a_id, rank_a, dob_a, name_a = display_rikishi_selector(
-                    f"Rikishi {i+1}A", f"fantasy_a_{i}", basho_id
+                    f"Rikishi {i+1}A", f"fantasy_a_{i}", basho_id, default_rikishi_a_id
                 )
 
             with col2:
@@ -915,44 +948,73 @@ def main():
                 st.warning(f"⚠️ Please select all 6 bouts. Currently have {len(bouts_data)} complete bout(s).")
             else:
                 with st.spinner("Running predictions for all 6 bouts..."):
-                    # Run all predictions (in parallel via list comprehension)
+                    # Run predictions in parallel
                     results = []
-                    for bout in bouts_data:
-                        result = predict_bout(
-                            model_package,
-                            bout['rikishi_a_id'],
-                            bout['rikishi_b_id'],
-                            basho_id,
-                            day,
-                            bout['rank_a'],
-                            bout['rank_b'],
-                            bout['dob_a'],
-                            bout['dob_b']
-                        )
-                        if 'error' not in result:
-                            result['name_a'] = bout['name_a']
-                            result['name_b'] = bout['name_b']
-                        results.append(result)
+                    with ThreadPoolExecutor(max_workers=3) as executor:
+                        futures = {}
+                        for bout in bouts_data:
+                            future = executor.submit(
+                                predict_bout,
+                                model_package,
+                                bout['rikishi_a_id'],
+                                bout['rikishi_b_id'],
+                                basho_id,
+                                day,
+                                bout['rank_a'],
+                                bout['rank_b'],
+                                bout['dob_a'],
+                                bout['dob_b']
+                            )
+                            futures[future] = bout
+
+                        # Collect results as they complete
+                        for future in as_completed(futures):
+                            bout = futures[future]
+                            result = future.result()
+                            # Always add rikishi names to result
+                            result_dict = cast(dict, result)
+                            result_dict['name_a'] = bout['name_a']
+                            result_dict['name_b'] = bout['name_b']
+                            results.append(result_dict)
+
+                # Collect rikishi A selections for saving
+                rikishi_a_selections = []
+                for i in range(6):
+                    text_input = st.session_state.get(f'fantasy_a_{i}_name_input', '')
+                    rikishi_id = st.session_state.get(f'fantasy_a_{i}_rikishi_id')
+                    rikishi_a_selections.append({
+                        'text_input': text_input,
+                        'rikishi_id': rikishi_id
+                    })
 
                 # Save preferences
-                save_preferences(basho_id, day)
+                save_preferences(basho_id, day, rikishi_a_selections)
 
-                # Sort by Rikishi A's expected fantasy points (descending)
-                sorted_results = sorted(
-                    results,
+                # Filter out error results and sort by Rikishi A's expected fantasy points
+                valid_results = [r for r in results if 'error' not in r]
+                error_results = [r for r in results if 'error' in r]
+
+                sorted_valid = sorted(
+                    valid_results,
                     key=lambda x: x['fantasy_points']['rikishi_a_expected'] if x['fantasy_points']['rikishi_a_expected'] is not None else 0,
                     reverse=True
                 )
 
-                # Display sorted summary
-                st.success("✅ All predictions complete!")
+                # Create combined list for detailed analysis (valid first, then errors)
+                sorted_results = sorted_valid + error_results
+
+                # Display status
+                if error_results:
+                    st.warning(f"⚠️ {len(error_results)} bout(s) had prediction errors. See details below.")
+                else:
+                    st.success("✅ All predictions complete!")
                 st.subheader("📊 Roster Summary - Sorted by Expected Fantasy Points")
 
                 # Create summary table
                 summary_data = []
                 total_expected = 0
 
-                for i, result in enumerate(sorted_results, 1):
+                for i, result in enumerate(sorted_valid, 1):
                     fp = result['fantasy_points']
                     a_expected = fp['rikishi_a_expected'] if fp['rikishi_a_expected'] is not None else 0
                     b_expected = fp['rikishi_b_expected'] if fp['rikishi_b_expected'] is not None else 0

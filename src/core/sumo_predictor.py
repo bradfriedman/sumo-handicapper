@@ -255,8 +255,12 @@ class FeatureEngineer:
                 COALESCE(SUM(CASE WHEN winning_rikishi_id = %s THEN 1 ELSE 0 END), 0) as a_wins,
                 COALESCE(SUM(CASE WHEN winning_rikishi_id = %s THEN 1 ELSE 0 END), 0) as b_wins
             FROM boi_ozumobout
-            WHERE (winning_rikishi_id = %s AND losing_rikishi_id = %s)
-               OR (winning_rikishi_id = %s AND losing_rikishi_id = %s)
+            JOIN boi_kimarite k ON kimarite_id = k.id
+            WHERE ((winning_rikishi_id = %s AND losing_rikishi_id = %s)
+               OR  (winning_rikishi_id = %s AND losing_rikishi_id = %s))
+              AND k.name NOT LIKE '%%hansoku%%'
+              AND k.name NOT LIKE '%%default%%'
+              AND k.name NOT LIKE '%%fusen%%'
         """
         cursor.execute(query, (rikishi_a, rikishi_b, rikishi_a,
                        rikishi_b, rikishi_b, rikishi_a))
@@ -368,8 +372,10 @@ class FeatureEngineer:
         # Rank features
         features['rikishi_a_rank'] = bout_row['winner_rank']
         features['rikishi_b_rank'] = bout_row['loser_rank']
-        features['rank_diff'] = bout_row['winner_rank'] - \
-            bout_row['loser_rank']
+        # rank_diff: positive when rikishi_a has better (lower) rank
+        # loser_rank - winner_rank so lower winner_rank = higher diff (consistent with elo_diff)
+        features['rank_diff'] = bout_row['loser_rank'] - \
+            bout_row['winner_rank']
 
         # Experience
         features['rikishi_a_total_bouts'] = self.rikishi_stats[rikishi_a]['total_bouts']
@@ -434,12 +440,21 @@ class FeatureEngineer:
 
         # Age (if available and configured)
         if self.config.include_age and pd.notna(bout_row['winner_dob']) and pd.notna(bout_row['loser_dob']):
-            # Approximate age at time of bout (using basho_id as rough date proxy)
-            # Each basho is roughly 2 months, starting from some base year
-            features['rikishi_a_age_years'] = (
-                datetime.now() - pd.to_datetime(bout_row['winner_dob'])).days / 365.25
-            features['rikishi_b_age_years'] = (
-                datetime.now() - pd.to_datetime(bout_row['loser_dob'])).days / 365.25
+            try:
+                # Derive approximate bout date from basho_id.
+                # Basho 633 = March 2026; bashos run every 2 months (Jan/Mar/May/Jul/Sep/Nov).
+                bout_month_idx = 2026 * 12 + 2 - (633 - basho_id) * 2  # 0-indexed months since year 0
+                bout_year = bout_month_idx // 12
+                bout_month = bout_month_idx % 12 + 1
+                bout_date = datetime(bout_year, bout_month, 15)
+                features['rikishi_a_age_years'] = (
+                    bout_date - pd.to_datetime(bout_row['winner_dob'], errors='coerce')).days / 365.25
+                features['rikishi_b_age_years'] = (
+                    bout_date - pd.to_datetime(bout_row['loser_dob'], errors='coerce')).days / 365.25
+            except (ValueError, TypeError):
+                # If age calculation fails, use defaults
+                features['rikishi_a_age_years'] = 25.0
+                features['rikishi_b_age_years'] = 25.0
 
         return features
 
@@ -475,7 +490,7 @@ class FeatureEngineer:
         labels = []
 
         print("Building features chronologically...")
-        for idx, bout in tqdm(bouts_df.iterrows(), total=len(bouts_df)):
+        for _, bout in tqdm(bouts_df.iterrows(), total=len(bouts_df)):
             # Extract features BEFORE updating (so we predict future from past)
             features = self.extract_features_for_bout(bout)
 

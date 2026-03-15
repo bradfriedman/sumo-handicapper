@@ -5,7 +5,6 @@ Goal: Beat 60.37% ensemble accuracy
 from src.core.sumo_predictor import (
     ModelConfig, SumoDataLoader, FeatureEngineer
 )
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, roc_auc_score
 import lightgbm as lgb
@@ -27,6 +26,7 @@ class EnhancedFeatureEngineer(FeatureEngineer):
         self.rank_specific_stats = {}
         self.rank_history = {}  # (rikishi_id) -> [(basho_id, rank)]
         self.momentum_decay = 0.5  # Exponential decay factor
+
 
     def _init_rank_specific_stats(self, rikishi_id: int):
         """Initialize rank-specific statistics"""
@@ -58,7 +58,7 @@ class EnhancedFeatureEngineer(FeatureEngineer):
 
         return weighted_sum / weight_sum if weight_sum > 0 else 0.5
 
-    def _calculate_rank_trend(self, rikishi_id: int, current_basho: int, current_rank: int) -> Tuple[float, float]:
+    def _calculate_rank_trend(self, rikishi_id: int) -> Tuple[float, float]:
         """
         Calculate rank trend (improving/declining career phase)
         Returns: (short_term_trend, long_term_trend)
@@ -98,9 +98,6 @@ class EnhancedFeatureEngineer(FeatureEngineer):
 
         rikishi_a = bout_row['winning_rikishi_id']
         rikishi_b = bout_row['losing_rikishi_id']
-        rank_a = bout_row['winner_rank']
-        rank_b = bout_row['loser_rank']
-        basho_id = bout_row['basho_id']
 
         # Initialize rank-specific tracking
         self._init_rank_specific_stats(rikishi_a)
@@ -154,10 +151,8 @@ class EnhancedFeatureEngineer(FeatureEngineer):
             total_vs_yoko_b if total_vs_yoko_b > 0 else 0.5
 
         # 3. CAREER PHASE / RANK TREND
-        short_trend_a, long_trend_a = self._calculate_rank_trend(
-            rikishi_a, basho_id, rank_a)
-        short_trend_b, long_trend_b = self._calculate_rank_trend(
-            rikishi_b, basho_id, rank_b)
+        short_trend_a, long_trend_a = self._calculate_rank_trend(rikishi_a)
+        short_trend_b, long_trend_b = self._calculate_rank_trend(rikishi_b)
 
         features['rikishi_a_short_trend'] = short_trend_a
         features['rikishi_b_short_trend'] = short_trend_b
@@ -203,7 +198,7 @@ class EnhancedFeatureEngineer(FeatureEngineer):
         labels = []
 
         print("Building features chronologically...")
-        for idx, bout in tqdm(bouts_df.iterrows(), total=len(bouts_df)):
+        for _, bout in tqdm(bouts_df.iterrows(), total=len(bouts_df)):
             # Extract features BEFORE updating
             features = self.extract_features_for_bout(bout)
 
@@ -345,11 +340,14 @@ def main():
     print(f"\nEnhanced dataset: {X.shape[0]} samples, {X.shape[1]} features")
     print(f"Added features: {X.shape[1] - 21} new features")
 
-    # Split data (same random state for fair comparison)
-    print("\nSplitting data...")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
+    # Chronological holdout: last 20% of bouts as test set.
+    # Split on bout boundaries (each bout = 2 samples) so mirror pairs are never
+    # split across train/test, and the model never trains on future bouts.
+    print("\nSplitting data (chronological holdout — last 20% of bouts)...")
+    n_samples = len(X)
+    split_idx = (int(n_samples * 0.8) // 2) * 2  # align to bout boundary
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 
     print("\n" + "="*80)
     print("TRAINING MODELS WITH ENHANCED FEATURES")
