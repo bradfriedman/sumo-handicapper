@@ -31,7 +31,8 @@ def test_connection():
         # Run a simple query
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM boi_ozumobout")
-        count = cursor.fetchone()[0]
+        result = cursor.fetchone()
+        count = result[0] if result else 0
         print(f"✓ Query successful: Found {count:,} bouts in database")
 
         cursor.close()

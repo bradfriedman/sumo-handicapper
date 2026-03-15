@@ -1273,10 +1273,10 @@ def main():
                         for pos, (_, row) in enumerate(df.iterrows()):
                             result = predict_bout(
                                 model_package,
-                                row['rikishi_a_id'],
-                                row['rikishi_b_id'],
-                                row['basho_id'],
-                                row['day'],
+                                row['rikishi_a_id'].item(),
+                                row['rikishi_b_id'].item(),
+                                row['basho_id'].item(),
+                                row['day'].item(),
                                 row.get('rikishi_a_rank'),
                                 row.get('rikishi_b_rank'),
                                 row.get('rikishi_a_dob'),

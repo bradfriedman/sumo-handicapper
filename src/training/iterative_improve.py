@@ -232,13 +232,16 @@ def main():
     print(f"\n{'='*80}")
     print("BEST MODEL")
     print(f"{'='*80}")
-    print(f"Iteration: {best_iteration}")
-    print(f"Configuration: {best_config['name']}")
-    print(f"Accuracy: {best_accuracy:.4f}")
-    print("\nConfig details:")
-    for key, value in best_config.items():
-        if key != 'name':
-            print(f"  {key}: {value}")
+    if best_config:
+        print(f"Iteration: {best_iteration}")
+        print(f"Configuration: {best_config['name']}")
+        print(f"Accuracy: {best_accuracy:.4f}")
+        print("\nConfig details:")
+        for key, value in best_config.items():
+            if key != 'name':
+                print(f"  {key}: {value}")
+    else:
+        print("No configuration improved upon the baseline.")
 
     # Save best model
     if best_model:

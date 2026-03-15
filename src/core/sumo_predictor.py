@@ -3,7 +3,7 @@ Sumo Bout Prediction Model with Iterative Improvement
 """
 import pandas as pd
 from datetime import datetime
-from typing import Dict, Tuple, List, Optional
+from typing import Dict, Tuple, List, Optional, cast
 from dataclasses import dataclass
 import joblib
 from tqdm import tqdm
@@ -351,10 +351,10 @@ class FeatureEngineer:
 
     def extract_features_for_bout(self, bout_row: pd.Series) -> Dict:
         """Extract features for a single bout before it happens"""
-        rikishi_a = bout_row['winning_rikishi_id']
-        rikishi_b = bout_row['losing_rikishi_id']
-        basho_id = bout_row['basho_id']
-        day = bout_row['day']
+        rikishi_a = bout_row['winning_rikishi_id'].item()
+        rikishi_b = bout_row['losing_rikishi_id'].item()
+        basho_id = bout_row['basho_id'].item()
+        day = bout_row['day'].item()
 
         self._init_rikishi_stats(rikishi_a)
         self._init_rikishi_stats(rikishi_b)
@@ -370,12 +370,12 @@ class FeatureEngineer:
             features['rikishi_b_elo']
 
         # Rank features
-        features['rikishi_a_rank'] = bout_row['winner_rank']
-        features['rikishi_b_rank'] = bout_row['loser_rank']
+        features['rikishi_a_rank'] = bout_row['winner_rank'].item()
+        features['rikishi_b_rank'] = bout_row['loser_rank'].item()
         # rank_diff: positive when rikishi_a has better (lower) rank
         # loser_rank - winner_rank so lower winner_rank = higher diff (consistent with elo_diff)
-        features['rank_diff'] = bout_row['loser_rank'] - \
-            bout_row['winner_rank']
+        features['rank_diff'] = bout_row['loser_rank'].item() - \
+            bout_row['winner_rank'].item()
 
         # Experience
         features['rikishi_a_total_bouts'] = self.rikishi_stats[rikishi_a]['total_bouts']
@@ -439,7 +439,9 @@ class FeatureEngineer:
         features['day_of_basho'] = day
 
         # Age (if available and configured)
-        if self.config.include_age and pd.notna(bout_row['winner_dob']) and pd.notna(bout_row['loser_dob']):
+        winner_dob = bout_row['winner_dob']
+        loser_dob = bout_row['loser_dob']
+        if self.config.include_age and winner_dob is not None and loser_dob is not None:
             try:
                 # Derive approximate bout date from basho_id.
                 # Basho 633 = March 2026; bashos run every 2 months (Jan/Mar/May/Jul/Sep/Nov).
@@ -460,8 +462,8 @@ class FeatureEngineer:
 
     def update_after_bout(self, bout_row: pd.Series, winner_id: int, loser_id: int):
         """Update all statistics after a bout completes"""
-        basho_id = bout_row['basho_id']
-        day = bout_row['day']
+        basho_id = bout_row['basho_id'].item()
+        day = bout_row['day'].item()
 
         # Update Elo
         self.elo_system.update_ratings(winner_id, loser_id, basho_id, day)
@@ -527,7 +529,7 @@ class FeatureEngineer:
 
             # NOW update statistics for next bout
             self.update_after_bout(
-                bout, bout['winning_rikishi_id'], bout['losing_rikishi_id'])
+                bout, bout['winning_rikishi_id'].item(), bout['losing_rikishi_id'].item())
 
         X = pd.DataFrame(features_list)
         y = pd.Series(labels, name='winner')
@@ -685,7 +687,7 @@ class SumoPredictor:
         y_pred = model.predict(X_test)
 
         # Find incorrect predictions
-        errors = X_test[y_test != y_pred].copy()
+        errors: pd.DataFrame = cast(pd.DataFrame, X_test[y_test != y_pred].copy())
         errors['true_label'] = y_test[y_test != y_pred]
         errors['predicted_label'] = y_pred[y_test != y_pred]
 
@@ -749,12 +751,16 @@ def main():
 
     # Split data
     print("\n3. Splitting data...")
-    X_train, X_test, y_train, y_test = train_test_split(
+    split_result = train_test_split(
         X, y,
         test_size=config.test_size,
         random_state=config.random_state,
         stratify=y
     )
+    X_train: pd.DataFrame = cast(pd.DataFrame, split_result[0])
+    X_test: pd.DataFrame = cast(pd.DataFrame, split_result[1])
+    y_train: pd.Series = cast(pd.Series, split_result[2])
+    y_test: pd.Series = cast(pd.Series, split_result[3])
     print(f"Train set: {len(X_train)} samples")
     print(f"Test set:  {len(X_test)} samples")
 

@@ -3,6 +3,8 @@ Save the best model + feature engineer state for making predictions
 """
 import os
 import numpy as np
+import pandas as pd
+from typing import cast
 from src.training.enhanced_features import EnhancedFeatureEngineer
 from src.core.sumo_predictor import ModelConfig, SumoDataLoader
 from src.utils.gpu_optimizer import GPUOptimizer
@@ -75,9 +77,9 @@ def train_and_save_production_model(
 
     # Filter by basho range if specified
     if start_basho is not None:
-        bouts_df = bouts_df[bouts_df['basho_id'] >= start_basho]
+        bouts_df = cast(pd.DataFrame, bouts_df[bouts_df['basho_id'] >= start_basho])
     if end_basho is not None:
-        bouts_df = bouts_df[bouts_df['basho_id'] <= end_basho]
+        bouts_df = cast(pd.DataFrame, bouts_df[bouts_df['basho_id'] <= end_basho])
 
     if len(bouts_df) == 0:
         if verbose:

@@ -96,8 +96,8 @@ class EnhancedFeatureEngineer(FeatureEngineer):
         # Get base features from parent class
         features = super().extract_features_for_bout(bout_row)
 
-        rikishi_a = bout_row['winning_rikishi_id']
-        rikishi_b = bout_row['losing_rikishi_id']
+        rikishi_a = bout_row['winning_rikishi_id'].item()
+        rikishi_b = bout_row['losing_rikishi_id'].item()
 
         # Initialize rank-specific tracking
         self._init_rank_specific_stats(rikishi_a)
@@ -240,7 +240,7 @@ class EnhancedFeatureEngineer(FeatureEngineer):
 
             # NOW update statistics for next bout
             self.update_after_bout(
-                bout, bout['winning_rikishi_id'], bout['losing_rikishi_id'])
+                bout, bout['winning_rikishi_id'].item(), bout['losing_rikishi_id'].item())
 
         X = pd.DataFrame(features_list)
         y = pd.Series(labels, name='winner')

@@ -45,6 +45,7 @@ class PredictionResultDict(TypedDict):
 class PredictionErrorDict(TypedDict):
     error: str
     suggestion: str | None
+    debug_details: NotRequired[str]
 
 
 # Database configuration (maintained for backward compatibility with enable_live_data)

@@ -274,7 +274,7 @@ if best_accuracy > 0.6017:
             'xgboost': xgb_model
         },
         'ensemble_type': best_ensemble[0] if best_ensemble else None,
-        'ensemble_params': best_ensemble[1] if len(best_ensemble) > 1 else None,
+        'ensemble_params': best_ensemble[1] if best_ensemble and len(best_ensemble) > 1 else None,
         'accuracy': best_accuracy,
         'name': best_name,
         'feature_names': X.columns.tolist()
