@@ -110,14 +110,22 @@ def basho_id_to_yyyymm(basho_id: int) -> str:
     return f"{year:04d}{month:02d}"
 
 
-def get_current_basho_and_day() -> tuple[int, int]:
+def get_current_basho_and_day(
+    fallback_basho_id: int | None = None,
+    fallback_day: int | None = None
+) -> tuple[int, int]:
     """
     Auto-detect current basho_id and day from database.
     Finds the maximum basho_id and the minimum day without filled results.
 
+    Args:
+        fallback_basho_id: Previously saved basho_id to use if query fails
+        fallback_day: Previously saved day to use if query fails
+
     Returns:
         Tuple of (basho_id, day) where day is the first day with unfilled
-        results (oyakata1_score and oyakata2_score are NULL)
+        results (oyakata1_score and oyakata2_score are NULL).
+        Falls back to provided values if query fails, or defaults if not provided.
     """
     conn = None
     cursor = None
@@ -149,9 +157,17 @@ def get_current_basho_and_day() -> tuple[int, int]:
 
         return basho_id, day
 
-    except pymysql.Error as e:
-        st.error(f"Database error detecting current basho: {str(e)}")
-        return DEFAULT_BASHO_ID, DEFAULT_DAY
+    except (pymysql.Error, Exception) as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            f"Could not auto-detect current basho/day: {type(e).__name__}: {str(e)}"
+        )
+        # Use fallback values if provided, otherwise use defaults
+        return (
+            fallback_basho_id if fallback_basho_id is not None else DEFAULT_BASHO_ID,
+            fallback_day if fallback_day is not None else DEFAULT_DAY
+        )
     finally:
         if cursor:
             cursor.close()
@@ -1160,8 +1176,14 @@ def main():
         bouts for optimal lineup selection.**
         """)
 
-        # Auto-detect basho and day
-        detected_basho, detected_day = get_current_basho_and_day()
+        # Load preferences for fallback values if auto-detect fails
+        saved_basho, saved_day, _ = load_preferences()
+
+        # Auto-detect basho and day (fall back to previously saved values if query fails)
+        detected_basho, detected_day = get_current_basho_and_day(
+            fallback_basho_id=saved_basho,
+            fallback_day=saved_day
+        )
 
         st.success(f"📅 Auto-detected: Basho {detected_basho}, Day {detected_day}")
 
