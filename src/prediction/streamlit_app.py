@@ -453,6 +453,11 @@ def cached_get_rikishi_by_id(rikishi_id, basho_id):
     """Cached wrapper for get_rikishi_by_id"""
     return get_rikishi_by_id(rikishi_id, basho_id)
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def cached_get_fantasy_squadrons(basho_id: int) -> list[dict]:
+    """Cached wrapper for get_fantasy_squadrons"""
+    return get_fantasy_squadrons(basho_id)
+
 def calculate_edit_distance(s1, s2):
     """Calculate Levenshtein distance between two strings"""
     s1 = s1.lower()
@@ -896,7 +901,67 @@ def main():
                 key="fantasy_day"
             )
 
+        # Invalidate auto-matches if basho or day changed
+        current_key = f"{basho_id}_{day}"
+        if st.session_state.get("fantasy_auto_key") != current_key:
+            st.session_state.pop("fantasy_auto_matches", None)
+            st.session_state["fantasy_auto_key"] = current_key
+
         st.divider()
+
+        # Oyakata auto-populate section
+        squadrons = cached_get_fantasy_squadrons(int(basho_id))
+        if squadrons:
+            st.subheader("Auto-Populate from Oyakata")
+            squadron_names = [s['shikona'] for s in squadrons]
+
+            # Default to 'Tadanisakari' if present (matches existing Auto-Lineup pattern)
+            default_oyakata_idx = 0
+            if 'Tadanisakari' in squadron_names:
+                default_oyakata_idx = squadron_names.index('Tadanisakari')
+
+            selected_oyakata_name = st.selectbox(
+                "Select Oyakata:",
+                squadron_names,
+                index=default_oyakata_idx,
+                key="fantasy_roster_oyakata"
+            )
+            selected_squadron = next(
+                s for s in squadrons if s['shikona'] == selected_oyakata_name
+            )
+
+            if st.button("Load Lineup from Oyakata", key="fantasy_roster_load"):
+                with st.spinner("Loading lineup..."):
+                    roster = get_squadron_roster(
+                        int(basho_id), selected_squadron['oyakata_id']
+                    )
+                    if not roster:
+                        st.error("No active roster members found for this squadron.")
+                    else:
+                        torikumi = scrape_torikumi(int(basho_id), int(day))
+                        matches = match_roster_to_opponents(
+                            roster, torikumi, int(basho_id)
+                        )
+                        # Store matches so B defaults can be passed to
+                        # display_rikishi_selector
+                        st.session_state["fantasy_auto_matches"] = matches
+                        # Force-populate text inputs for A and B (override any
+                        # prior values)
+                        for idx, match in enumerate(matches[:6]):
+                            st.session_state[
+                                f"fantasy_a_{idx}_name_input"
+                            ] = match['your_rikishi_name']
+                            if match.get('opponent_name'):
+                                st.session_state[
+                                    f"fantasy_b_{idx}_name_input"
+                                ] = match['opponent_name']
+                            else:
+                                # No match today — clear B slot
+                                st.session_state[
+                                    f"fantasy_b_{idx}_name_input"
+                                ] = ""
+            st.divider()
+
         st.subheader("Enter Your 6 Roster Bouts")
 
         # Store bout data
@@ -920,8 +985,15 @@ def main():
 
             with col2:
                 st.write("**Opponent (B)**")
+                # Get opponent default ID if available from auto-loaded matches
+                default_opponent_id = None
+                auto_matches = st.session_state.get("fantasy_auto_matches", [])
+                if i < len(auto_matches) and auto_matches[i].get("opponent_id"):
+                    default_opponent_id = auto_matches[i]["opponent_id"]
+
                 rikishi_b_id, rank_b, dob_b, name_b = display_rikishi_selector(
-                    f"Rikishi {i+1}B", f"fantasy_b_{i}", basho_id
+                    f"Rikishi {i+1}B", f"fantasy_b_{i}", basho_id,
+                    default_opponent_id
                 )
 
             if rikishi_a_id and rikishi_b_id:
