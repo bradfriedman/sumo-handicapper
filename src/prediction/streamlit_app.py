@@ -113,29 +113,36 @@ def basho_id_to_yyyymm(basho_id: int) -> str:
 def get_current_basho_and_day() -> tuple[int, int]:
     """
     Auto-detect current basho_id and day from database.
+    Finds the maximum basho_id and the minimum day without filled results.
 
     Returns:
-        Tuple of (basho_id, day)
+        Tuple of (basho_id, day) where day is the first day with unfilled
+        results (oyakata1_score and oyakata2_score are NULL)
     """
     conn = None
     cursor = None
     try:
         conn = get_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
 
-        # Get current basho_id
-        cursor.execute('SELECT MAX(basho_id) FROM boi_lineupentry')
+        # Get max basho_id
+        cursor.execute('SELECT MAX(basho_id) as max_basho FROM boi_bout')
         result = cursor.fetchone()
-        basho_id = result[0] if result and result[0] else DEFAULT_BASHO_ID
+        basho_id = (result['max_basho']
+                    if result and result['max_basho']
+                    else DEFAULT_BASHO_ID)
 
-        # Get current day
-        cursor.execute('SELECT MAX(day) FROM boi_bout WHERE basho_id = %s', (basho_id,))
+        # Get minimum day where results are not yet filled in
+        cursor.execute('''
+            SELECT MIN(day) as current_day
+            FROM boi_bout
+            WHERE basho_id = %s
+            AND oyakata1_score IS NULL
+            AND oyakata2_score IS NULL
+        ''', (basho_id,))
+
         result = cursor.fetchone()
-
-        if result and result[0]:
-            day = result[0] + 1
-        else:
-            day = 1
+        day = result['current_day'] if result and result['current_day'] else DEFAULT_DAY
 
         # Clamp day to [1, 15]
         day = max(1, min(15, day))
