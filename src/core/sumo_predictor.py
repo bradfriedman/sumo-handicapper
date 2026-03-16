@@ -351,10 +351,10 @@ class FeatureEngineer:
 
     def extract_features_for_bout(self, bout_row: pd.Series) -> Dict:
         """Extract features for a single bout before it happens"""
-        rikishi_a = bout_row['winning_rikishi_id'].item()
-        rikishi_b = bout_row['losing_rikishi_id'].item()
-        basho_id = bout_row['basho_id'].item()
-        day = bout_row['day'].item()
+        rikishi_a = int(bout_row['winning_rikishi_id'])
+        rikishi_b = int(bout_row['losing_rikishi_id'])
+        basho_id = int(bout_row['basho_id'])
+        day = int(bout_row['day'])
 
         self._init_rikishi_stats(rikishi_a)
         self._init_rikishi_stats(rikishi_b)
@@ -370,12 +370,12 @@ class FeatureEngineer:
             features['rikishi_b_elo']
 
         # Rank features
-        features['rikishi_a_rank'] = bout_row['winner_rank'].item()
-        features['rikishi_b_rank'] = bout_row['loser_rank'].item()
+        features['rikishi_a_rank'] = int(bout_row['winner_rank'])
+        features['rikishi_b_rank'] = int(bout_row['loser_rank'])
         # rank_diff: positive when rikishi_a has better (lower) rank
         # loser_rank - winner_rank so lower winner_rank = higher diff (consistent with elo_diff)
-        features['rank_diff'] = bout_row['loser_rank'].item() - \
-            bout_row['winner_rank'].item()
+        features['rank_diff'] = int(bout_row['loser_rank']) - \
+            int(bout_row['winner_rank'])
 
         # Experience
         features['rikishi_a_total_bouts'] = self.rikishi_stats[rikishi_a]['total_bouts']

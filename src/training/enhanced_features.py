@@ -96,8 +96,8 @@ class EnhancedFeatureEngineer(FeatureEngineer):
         # Get base features from parent class
         features = super().extract_features_for_bout(bout_row)
 
-        rikishi_a = bout_row['winning_rikishi_id'].item()
-        rikishi_b = bout_row['losing_rikishi_id'].item()
+        rikishi_a = int(bout_row['winning_rikishi_id'])
+        rikishi_b = int(bout_row['losing_rikishi_id'])
 
         # Initialize rank-specific tracking
         self._init_rank_specific_stats(rikishi_a)

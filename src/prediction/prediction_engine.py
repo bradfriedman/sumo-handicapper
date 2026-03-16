@@ -75,6 +75,8 @@ def load_model():
             booster = xgb.Booster(model_file=booster_path)
             xgb_classifier = xgb.XGBClassifier()
             xgb_classifier._Booster = booster
+            # Set required attributes for sklearn compatibility
+            xgb_classifier.n_classes_ = 2  # Binary classification
             model_package['models']['xgboost'] = xgb_classifier
 
         # Enable live data queries for fresh stats at prediction time
