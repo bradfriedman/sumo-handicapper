@@ -27,10 +27,6 @@ from src.prediction.prediction_engine import (  # noqa: E402
 from src.core.fantasy_points import get_rank_label  # noqa: E402
 from src.core.db_connector import get_connection  # noqa: E402
 
-from src.training.update_model import (  # noqa: E402
-    load_training_state, get_latest_bout_in_db, update_model
-)
-
 # Preferences file path (stored in project root)
 PREFERENCES_FILE = os.path.join(project_root, '.streamlit_preferences.json')
 
@@ -1498,6 +1494,10 @@ def main():
                 "and redeploy."
             )
         else:
+            from src.training.update_model import (
+                load_training_state, get_latest_bout_in_db, update_model
+            )
+
             state = load_training_state()
 
             st.subheader("📊 Current Model Status")
