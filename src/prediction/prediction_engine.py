@@ -191,6 +191,7 @@ def predict_bout(
     rikishi_b_rank: int | None = None,
     rikishi_a_dob: str | None = None,
     rikishi_b_dob: str | None = None,
+    h2h_override: tuple[int, int] | None = None,
 ) -> PredictionResultDict | PredictionErrorDict:
     """
     Predict the outcome of a bout between two rikishi
@@ -218,7 +219,7 @@ def predict_bout(
 
     # Extract features
     try:
-        features = engineer.extract_features_for_bout(bout_series)
+        features = engineer.extract_features_for_bout(bout_series, h2h_override=h2h_override)
     except Exception as e:
         error_details = traceback.format_exc()
         print(f"Feature extraction error:\n{error_details}")

@@ -4,6 +4,7 @@ Beautiful, reactive interface for predicting sumo wrestling outcomes
 """
 import sys
 import os
+import re
 import json
 from typing import cast
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,13 +27,26 @@ from src.prediction.prediction_engine import (  # noqa: E402
 from src.core.fantasy_points import get_rank_label  # noqa: E402
 from src.core.db_connector import get_connection  # noqa: E402
 
-# Temporarily commented out to avoid scipy import issues on Windows
-# from src.training.update_model import (
-#     load_training_state, get_latest_bout_in_db, update_model
-# )
+from src.training.update_model import (  # noqa: E402
+    load_training_state, get_latest_bout_in_db, update_model
+)
 
 # Preferences file path (stored in project root)
 PREFERENCES_FILE = os.path.join(project_root, '.streamlit_preferences.json')
+
+
+def is_streamlit_cloud() -> bool:
+    """
+    Detect whether the app is running on Streamlit Community Cloud.
+
+    Community Cloud mounts the repo under /mount/src/<repo>, which local
+    and other deployments don't do. An explicit IS_STREAMLIT_CLOUD secret
+    overrides the heuristic for other hosting environments.
+    """
+    override = st.secrets.get('IS_STREAMLIT_CLOUD')
+    if override is not None:
+        return bool(override)
+    return os.path.abspath(__file__).replace('\\', '/').startswith('/mount/src/')
 
 # Default values
 DEFAULT_BASHO_ID = 630
@@ -297,9 +311,28 @@ def scrape_torikumi(basho_id: int, day: int) -> list[dict]:
                             name_a = east_a.get_text(strip=True)
                             name_b = west_a.get_text(strip=True)
 
+                            # Extract H2H record from tk_kim cell (always east-first perspective)
+                            h2h_east_wins: int | None = None
+                            h2h_west_wins: int | None = None
+                            kim_cell = row.find('td', class_='tk_kim')
+                            if kim_cell:
+                                h2h_link = kim_cell.find(
+                                    'a', href=lambda h: bool(h and 'Rikishi_opp.aspx' in h)
+                                )
+                                if h2h_link:
+                                    h2h_text = h2h_link.get_text(strip=True)
+                                    # Strip bracketed adjustments like [−1], e.g. "9[-1]-13" → "9-13"
+                                    h2h_text = re.sub(r'\[[^\]]*\]', '', h2h_text)
+                                    parts = h2h_text.split('-')
+                                    if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                                        h2h_east_wins = int(parts[0])
+                                        h2h_west_wins = int(parts[1])
+
                             makuuchi_bouts.append({
                                 "rikishi_a_name": name_a,
-                                "rikishi_b_name": name_b
+                                "rikishi_b_name": name_b,
+                                "h2h_east_wins": h2h_east_wins,
+                                "h2h_west_wins": h2h_west_wins,
                             })
                 
                 # Stop processing tables once the Makuuchi section is complete
@@ -317,6 +350,33 @@ def scrape_torikumi(basho_id: int, day: int) -> list[dict]:
     except Exception as e:
         st.error(f"Error parsing torikumi data: {str(e)}")
         return []
+
+
+def get_cached_torikumi(basho_id: int, day: int) -> list[dict]:
+    """Return torikumi for basho_id/day, scraping once and caching in session state."""
+    cache_key = f"torikumi_{basho_id}_{day}"
+    if cache_key not in st.session_state:
+        st.session_state[cache_key] = scrape_torikumi(basho_id, day)
+    return st.session_state[cache_key]
+
+
+def lookup_h2h_override(
+    torikumi: list[dict], name_a: str, name_b: str
+) -> tuple[int, int] | None:
+    """
+    Look up H2H record for a pair of wrestlers from scraped torikumi data.
+    Returns (a_wins, b_wins) from name_a's perspective, or None if not found.
+    """
+    for bout in torikumi:
+        east_wins = bout.get('h2h_east_wins')
+        west_wins = bout.get('h2h_west_wins')
+        if east_wins is None or west_wins is None:
+            continue
+        if bout['rikishi_a_name'] == name_a and bout['rikishi_b_name'] == name_b:
+            return (east_wins, west_wins)
+        if bout['rikishi_a_name'] == name_b and bout['rikishi_b_name'] == name_a:
+            return (west_wins, east_wins)
+    return None
 
 
 def match_roster_to_opponents(roster: list[dict], torikumi: list[dict], basho_id: int) -> list[dict]:
@@ -347,12 +407,22 @@ def match_roster_to_opponents(roster: list[dict], torikumi: list[dict], basho_id
             opponent_name = None
 
             # Search torikumi for exact match
+            h2h_override: tuple[int, int] | None = None
             for bout in torikumi:
                 if bout['rikishi_a_name'] == shikona:
                     opponent_name = bout['rikishi_b_name']
+                    east_wins = bout.get('h2h_east_wins')
+                    west_wins = bout.get('h2h_west_wins')
+                    if east_wins is not None and west_wins is not None:
+                        h2h_override = (east_wins, west_wins)
                     break
                 elif bout['rikishi_b_name'] == shikona:
                     opponent_name = bout['rikishi_a_name']
+                    east_wins = bout.get('h2h_east_wins')
+                    west_wins = bout.get('h2h_west_wins')
+                    if east_wins is not None and west_wins is not None:
+                        # Flip perspective: "your rikishi" is west here
+                        h2h_override = (west_wins, east_wins)
                     break
 
             result = {
@@ -380,6 +450,7 @@ def match_roster_to_opponents(roster: list[dict], torikumi: list[dict], basho_id
                     result['opponent_name'] = opponent_name
                     result['opponent_rank'] = opponent['rank']
                     result['opponent_dob'] = opponent['dob']
+                    result['h2h_override'] = h2h_override
                 else:
                     # Opponent not found in database
                     result['opponent_id'] = None
@@ -861,6 +932,8 @@ def main():
         if st.button("🔮 Predict Bout Outcome", type="primary", width='stretch'):
             if rikishi_a_id and rikishi_b_id:
                 with st.spinner("Making prediction..."):
+                    torikumi = get_cached_torikumi(basho_id, int(day))
+                    h2h = lookup_h2h_override(torikumi, name_a, name_b) if name_a and name_b else None
                     result = predict_bout(
                         model_package,
                         rikishi_a_id,
@@ -870,7 +943,8 @@ def main():
                         rank_a,
                         rank_b,
                         dob_a,
-                        dob_b
+                        dob_b,
+                        h2h_override=h2h,
                     )
 
                 if 'error' in result:
@@ -1043,11 +1117,13 @@ def main():
                 st.warning(f"⚠️ Please select all 6 bouts. Currently have {len(bouts_data)} complete bout(s).")
             else:
                 with st.spinner("Running predictions for all 6 bouts..."):
+                    torikumi = get_cached_torikumi(basho_id, int(day))
                     # Run predictions in parallel
                     results = []
                     with ThreadPoolExecutor(max_workers=3) as executor:
                         futures = {}
                         for bout in bouts_data:
+                            h2h = lookup_h2h_override(torikumi, bout['name_a'], bout['name_b'])
                             future = executor.submit(
                                 predict_bout,
                                 model_package,
@@ -1058,7 +1134,8 @@ def main():
                                 bout['rank_a'],
                                 bout['rank_b'],
                                 bout['dob_a'],
-                                bout['dob_b']
+                                bout['dob_b'],
+                                h2h,
                             )
                             futures[future] = bout
 
@@ -1270,7 +1347,8 @@ def main():
                                             match['your_rank'],
                                             match['opponent_rank'],
                                             match['your_dob'],
-                                            match['opponent_dob']
+                                            match['opponent_dob'],
+                                            h2h_override=match.get('h2h_override'),
                                         )
                                         if 'error' not in result:
                                             result['name_a'] = match['your_rikishi_name']
@@ -1374,10 +1452,10 @@ def main():
                         for pos, (_, row) in enumerate(df.iterrows()):
                             result = predict_bout(
                                 model_package,
-                                row['rikishi_a_id'].item(),
-                                row['rikishi_b_id'].item(),
-                                row['basho_id'].item(),
-                                row['day'].item(),
+                                int(row['rikishi_a_id']),
+                                int(row['rikishi_b_id']),
+                                int(row['basho_id']),
+                                int(row['day']),
                                 row.get('rikishi_a_rank'),
                                 row.get('rikishi_b_rank'),
                                 row.get('rikishi_a_dob'),
@@ -1406,153 +1484,158 @@ def main():
 
     elif mode == "Update Model":
         st.header("🔧 Model Update")
-        st.warning("⚠️ Update Model mode temporarily disabled due to Windows security restrictions.")
-        st.info("""
-        This mode requires scipy which is currently blocked by Windows Application Control.
-        Please contact your system administrator to unblock the .venv folder, or manually update the model.
-        """)
-        # The entire Update Model functionality has been temporarily disabled
-        # Uncomment the import at the top and this section once scipy is unblocked
-        """
-        # state = load_training_state()
 
-        st.subheader("📊 Current Model Status")
-
-        if state['last_trained_basho_id']:
-            col1, col2, col3, col4 = st.columns(4)
-
-            with col1:
-                st.metric("Last Trained Basho", state['last_trained_basho_id'])
-
-            with col2:
-                st.metric("Last Trained Day", state['last_trained_day'])
-
-            with col3:
-                st.metric("Training Bouts", f"{state['num_training_bouts']:,}")
-
-            with col4:
-                if state['accuracy']:
-                    st.metric("Model Accuracy", f"{state['accuracy']*100:.2f}%")
-                else:
-                    st.metric("Model Accuracy", "N/A")
-
-            if state['last_training_date']:
-                from datetime import datetime
-                try:
-                    training_date = datetime.fromisoformat(state['last_training_date'])
-                    st.caption(f"Last updated: {training_date.strftime('%Y-%m-%d %H:%M:%S')}")
-                except:
-                    st.caption(f"Last updated: {state['last_training_date']}")
+        if is_streamlit_cloud():
+            st.info(
+                "Model updates aren't available when running on Streamlit "
+                "Community Cloud. Retraining the full ensemble is CPU/memory-"
+                "heavy for the free-tier resource limits here, and the "
+                "filesystem is ephemeral, so an updated model file wouldn't "
+                "persist across restarts anyway.\n\n"
+                "To update the model, run it locally with:\n"
+                "`uv run python -m src.training.update_model`\n\n"
+                "then commit the updated `models/sumo_predictor_production.joblib` "
+                "and redeploy."
+            )
         else:
-            st.warning("⚠️ No previous training found. Model will be trained from scratch.")
+            state = load_training_state()
 
-        st.divider()
+            st.subheader("📊 Current Model Status")
 
-        # Check for new data
-        st.subheader("🔍 Check for New Data")
+            if state['last_trained_basho_id']:
+                col1, col2, col3, col4 = st.columns(4)
 
-        if st.button("🔎 Check Database", width='stretch'):
-            with st.spinner("Querying database for latest bout..."):
-                latest_basho, latest_day = get_latest_bout_in_db()
+                with col1:
+                    st.metric("Last Trained Basho", state['last_trained_basho_id'])
 
-                if latest_basho is None:
-                    st.error("❌ Could not connect to database or no bouts found")
-                else:
-                    st.success(f"✅ Latest bout in database: Basho {latest_basho}, Day {latest_day}")
+                with col2:
+                    st.metric("Last Trained Day", state['last_trained_day'])
 
-                    # Check if update is needed
-                    if (state['last_trained_basho_id'] == latest_basho and
-                        state['last_trained_day'] == latest_day):
-                        st.info("✓ Model is already up-to-date! No new bouts to train on.")
+                with col3:
+                    st.metric("Training Bouts", f"{state['num_training_bouts']:,}")
+
+                with col4:
+                    if state['accuracy']:
+                        st.metric("Model Accuracy", f"{state['accuracy']*100:.2f}%")
                     else:
-                        st.warning(f"⚡ New data available! Model can be updated.")
-                        if state['last_trained_basho_id']:
-                            st.write(f"Current: Basho {state['last_trained_basho_id']}, Day {state['last_trained_day']}")
-                            st.write(f"Latest: Basho {latest_basho}, Day {latest_day}")
+                        st.metric("Model Accuracy", "N/A")
 
-        st.divider()
+                if state['last_training_date']:
+                    from datetime import datetime
+                    try:
+                        training_date = datetime.fromisoformat(state['last_training_date'])
+                        st.caption(f"Last updated: {training_date.strftime('%Y-%m-%d %H:%M:%S')}")
+                    except:
+                        st.caption(f"Last updated: {state['last_training_date']}")
+            else:
+                st.warning("⚠️ No previous training found. Model will be trained from scratch.")
 
-        # Update model section
-        st.subheader("🚀 Update Model")
+            st.divider()
 
-        use_full_corpus = st.checkbox(
-            "Train on FULL CORPUS (all historical bouts)",
-            value=True,
-            help="Recommended: Train on all available data for best accuracy. Uncheck to train on recent data only (faster but less accurate)."
-        )
+            # Check for new data
+            st.subheader("🔍 Check for New Data")
 
-        if use_full_corpus:
-            st.info("✓ Will train on ALL bouts in the database (recommended for production)")
-        else:
-            st.warning("⚠️ Will train on recent data only (50 bashos). Use this for testing only.")
+            if st.button("🔎 Check Database", width='stretch'):
+                with st.spinner("Querying database for latest bout..."):
+                    latest_basho, latest_day = get_latest_bout_in_db()
 
-        if st.button("🔥 Update Model with New Data", type="primary", width='stretch'):
-            # Create progress indicators
-            progress_bar = st.progress(0)
-            status_text = st.empty()
+                    if latest_basho is None:
+                        st.error("❌ Could not connect to database or no bouts found")
+                    else:
+                        st.success(f"✅ Latest bout in database: Basho {latest_basho}, Day {latest_day}")
 
-            try:
-                status_text.text("Checking for new data...")
-                progress_bar.progress(10)
-
-                # Run the update
-                status_text.text("Training model... This may take several minutes.")
-                progress_bar.progress(20)
-
-                # Note: The update_model function doesn't provide incremental progress,
-                # so we'll show an indeterminate state during training
-                result = update_model(use_full_corpus=use_full_corpus, verbose=False)
-
-                progress_bar.progress(100)
-                status_text.text("Update complete!")
-
-                if result is None:
-                    st.error("❌ Model update failed. Check logs for details.")
-                elif result['updated']:
-                    st.success("✅ Model successfully updated!")
-
-                    # Show before/after comparison
-                    st.subheader("📈 Update Summary")
-
-                    col1, col2 = st.columns(2)
-
-                    with col1:
-                        st.markdown("**Before Update**")
-                        if state['last_trained_basho_id']:
-                            st.write(f"Basho: {state['last_trained_basho_id']}, Day: {state['last_trained_day']}")
-                            st.write(f"Bouts: {state['num_training_bouts']:,}")
-                            if state['accuracy']:
-                                st.write(f"Accuracy: {state['accuracy']*100:.2f}%")
+                        # Check if update is needed
+                        if (state['last_trained_basho_id'] == latest_basho and
+                            state['last_trained_day'] == latest_day):
+                            st.info("✓ Model is already up-to-date! No new bouts to train on.")
                         else:
-                            st.write("No previous training")
+                            st.warning(f"⚡ New data available! Model can be updated.")
+                            if state['last_trained_basho_id']:
+                                st.write(f"Current: Basho {state['last_trained_basho_id']}, Day {state['last_trained_day']}")
+                                st.write(f"Latest: Basho {latest_basho}, Day {latest_day}")
 
-                    with col2:
-                        st.markdown("**After Update**")
-                        st.write(f"Basho: {result['last_basho']}, Day: {result['last_day']}")
-                        st.write(f"Bouts: {result['num_bouts']:,}")
-                        st.write(f"Accuracy: {result['accuracy']*100:.2f}%")
+            st.divider()
 
-                    # Calculate improvement
-                    if state['accuracy'] and result['accuracy']:
-                        improvement = (result['accuracy'] - state['accuracy']) * 100
-                        if improvement > 0:
-                            st.success(f"📊 Accuracy improved by {improvement:.2f} percentage points!")
-                        elif improvement < 0:
-                            st.warning(f"📊 Accuracy decreased by {abs(improvement):.2f} percentage points.")
-                        else:
-                            st.info("📊 Accuracy remained the same.")
+            # Update model section
+            st.subheader("🚀 Update Model")
 
-                    st.info("💡 **Next Step**: Reload this page to use the updated model for predictions.")
+            use_full_corpus = st.checkbox(
+                "Train on FULL CORPUS (all historical bouts)",
+                value=True,
+                help="Recommended: Train on all available data for best accuracy. Uncheck to train on recent data only (faster but less accurate)."
+            )
 
-                else:
-                    st.info("✓ Model is already up-to-date. No new bouts to train on.")
+            if use_full_corpus:
+                st.info("✓ Will train on ALL bouts in the database (recommended for production)")
+            else:
+                st.warning("⚠️ Will train on recent data only (50 bashos). Use this for testing only.")
 
-            except Exception as e:
-                progress_bar.progress(0)
-                status_text.text("")
-                st.error(f"❌ Error during model update: {str(e)}")
-                st.write("Please check that all dependencies are installed and the database is accessible.")
-        """
+            if st.button("🔥 Update Model with New Data", type="primary", width='stretch'):
+                # Create progress indicators
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+
+                try:
+                    status_text.text("Checking for new data...")
+                    progress_bar.progress(10)
+
+                    # Run the update
+                    status_text.text("Training model... This may take several minutes.")
+                    progress_bar.progress(20)
+
+                    # Note: The update_model function doesn't provide incremental progress,
+                    # so we'll show an indeterminate state during training
+                    result = update_model(use_full_corpus=use_full_corpus, verbose=False)
+
+                    progress_bar.progress(100)
+                    status_text.text("Update complete!")
+
+                    if result is None:
+                        st.error("❌ Model update failed. Check logs for details.")
+                    elif result['updated']:
+                        st.success("✅ Model successfully updated!")
+
+                        # Show before/after comparison
+                        st.subheader("📈 Update Summary")
+
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            st.markdown("**Before Update**")
+                            if state['last_trained_basho_id']:
+                                st.write(f"Basho: {state['last_trained_basho_id']}, Day: {state['last_trained_day']}")
+                                st.write(f"Bouts: {state['num_training_bouts']:,}")
+                                if state['accuracy']:
+                                    st.write(f"Accuracy: {state['accuracy']*100:.2f}%")
+                            else:
+                                st.write("No previous training")
+
+                        with col2:
+                            st.markdown("**After Update**")
+                            st.write(f"Basho: {result['last_basho']}, Day: {result['last_day']}")
+                            st.write(f"Bouts: {result['num_bouts']:,}")
+                            st.write(f"Accuracy: {result['accuracy']*100:.2f}%")
+
+                        # Calculate improvement
+                        if state['accuracy'] and result['accuracy']:
+                            improvement = (result['accuracy'] - state['accuracy']) * 100
+                            if improvement > 0:
+                                st.success(f"📊 Accuracy improved by {improvement:.2f} percentage points!")
+                            elif improvement < 0:
+                                st.warning(f"📊 Accuracy decreased by {abs(improvement):.2f} percentage points.")
+                            else:
+                                st.info("📊 Accuracy remained the same.")
+
+                        st.info("💡 **Next Step**: Reload this page to use the updated model for predictions.")
+
+                    else:
+                        st.info("✓ Model is already up-to-date. No new bouts to train on.")
+
+                except Exception as e:
+                    progress_bar.progress(0)
+                    status_text.text("")
+                    st.error(f"❌ Error during model update: {str(e)}")
+                    st.write("Please check that all dependencies are installed and the database is accessible.")
 
     # Footer
     st.divider()

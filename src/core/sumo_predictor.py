@@ -349,7 +349,9 @@ class FeatureEngineer:
             return (int(result[0]), int(result[1]))
         return (0, 0)
 
-    def extract_features_for_bout(self, bout_row: pd.Series) -> Dict:
+    def extract_features_for_bout(
+        self, bout_row: pd.Series, h2h_override: Optional[Tuple[int, int]] = None
+    ) -> Dict:
         """Extract features for a single bout before it happens"""
         rikishi_a = int(bout_row['winning_rikishi_id'])
         rikishi_b = int(bout_row['losing_rikishi_id'])
@@ -421,9 +423,11 @@ class FeatureEngineer:
         features['rikishi_b_basho_win_rate'] = (
             basho_b_wins + 1) / (basho_b_wins + basho_b_losses + 2)
 
-        # Head-to-head - use live data if available
+        # Head-to-head - use override (scraped), live DB, or cached data
         if self.config.include_head_to_head:
-            if self.db_config:
+            if h2h_override is not None:
+                a_h2h_wins, b_h2h_wins = h2h_override
+            elif self.db_config:
                 a_h2h_wins, b_h2h_wins = self._get_live_head_to_head(
                     rikishi_a, rikishi_b)
             else:
@@ -462,8 +466,8 @@ class FeatureEngineer:
 
     def update_after_bout(self, bout_row: pd.Series, winner_id: int, loser_id: int):
         """Update all statistics after a bout completes"""
-        basho_id = bout_row['basho_id'].item()
-        day = bout_row['day'].item()
+        basho_id = int(bout_row['basho_id'])
+        day = int(bout_row['day'])
 
         # Update Elo
         self.elo_system.update_ratings(winner_id, loser_id, basho_id, day)
@@ -529,7 +533,7 @@ class FeatureEngineer:
 
             # NOW update statistics for next bout
             self.update_after_bout(
-                bout, bout['winning_rikishi_id'].item(), bout['losing_rikishi_id'].item())
+                bout, int(bout['winning_rikishi_id']), int(bout['losing_rikishi_id']))
 
         X = pd.DataFrame(features_list)
         y = pd.Series(labels, name='winner')

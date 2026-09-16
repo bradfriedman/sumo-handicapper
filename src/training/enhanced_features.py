@@ -11,7 +11,7 @@ import lightgbm as lgb
 import xgboost as xgb
 import pandas as pd
 import numpy as np
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional
 from tqdm import tqdm
 
 
@@ -90,11 +90,13 @@ class EnhancedFeatureEngineer(FeatureEngineer):
 
         return short_trend, long_trend
 
-    def extract_features_for_bout(self, bout_row: pd.Series) -> Dict:
+    def extract_features_for_bout(
+        self, bout_row: pd.Series, h2h_override: Optional[Tuple[int, int]] = None
+    ) -> Dict:
         """Enhanced feature extraction with momentum and rank-specific stats"""
 
         # Get base features from parent class
-        features = super().extract_features_for_bout(bout_row)
+        features = super().extract_features_for_bout(bout_row, h2h_override=h2h_override)
 
         rikishi_a = int(bout_row['winning_rikishi_id'])
         rikishi_b = int(bout_row['losing_rikishi_id'])
@@ -240,7 +242,7 @@ class EnhancedFeatureEngineer(FeatureEngineer):
 
             # NOW update statistics for next bout
             self.update_after_bout(
-                bout, bout['winning_rikishi_id'].item(), bout['losing_rikishi_id'].item())
+                bout, int(bout['winning_rikishi_id']), int(bout['losing_rikishi_id']))
 
         X = pd.DataFrame(features_list)
         y = pd.Series(labels, name='winner')
